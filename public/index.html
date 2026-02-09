@@ -63,8 +63,13 @@ a:hover{text-decoration:underline}
    ============================================================ */
 .card{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius);padding:20px;transition:box-shadow var(--transition),border-color var(--transition),background var(--transition);position:relative;overflow:hidden}
 .card:hover{border-color:var(--border-hover);box-shadow:var(--glow-blue);background:var(--bg-card-hover)}
-.card-title{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card-title{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;transition:color var(--transition)}
+.card-title:hover{color:var(--text-secondary)}
 .card-title .icon{font-size:1rem}
+.card-title .collapse-icon{margin-left:auto;font-size:.65rem;transition:transform var(--transition);color:var(--text-muted)}
+.card-title .collapse-icon.collapsed{transform:rotate(-90deg)}
+.card-body{overflow:hidden;transition:max-height 0.4s ease,opacity 0.3s ease;max-height:2000px;opacity:1}
+.card-body.collapsed{max-height:0;opacity:0;margin:0;padding:0}
 
 /* ============================================================
    ANIMATIONS
@@ -74,9 +79,35 @@ a:hover{text-decoration:underline}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 @keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideInRight{from{opacity:0;transform:translateX(100%)}to{opacity:1;transform:translateX(0)}}
+@keyframes slideOutRight{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(100%)}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+@keyframes countUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .flash-green{animation:flashGreen .3s ease-out}
 .flash-red{animation:flashRed .3s ease-out}
 .pulse{animation:pulse 2s infinite}
+.anim-value{animation:countUp .3s ease}
+
+/* Skeleton loading */
+.skeleton{background:linear-gradient(90deg,var(--bg-primary) 25%,#1e293b 50%,var(--bg-primary) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:4px;color:transparent !important}
+
+/* ============================================================
+   TOAST NOTIFICATIONS
+   ============================================================ */
+.toast-container{position:fixed;top:16px;right:16px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:380px;width:100%}
+.toast{pointer-events:all;background:var(--bg-card);border:1px solid var(--border-color);border-radius:12px;padding:12px 16px;display:flex;align-items:flex-start;gap:10px;animation:slideInRight .3s ease;box-shadow:0 8px 32px rgba(0,0,0,.4);cursor:pointer;transition:opacity .3s ease,transform .3s ease}
+.toast.removing{animation:slideOutRight .3s ease forwards}
+.toast-icon{font-size:1.2rem;flex-shrink:0;margin-top:2px}
+.toast-body{flex:1;min-width:0}
+.toast-title{font-size:.8rem;font-weight:700;margin-bottom:2px}
+.toast-msg{font-size:.7rem;color:var(--text-secondary);line-height:1.3}
+.toast-time{font-size:.6rem;color:var(--text-muted);margin-top:3px}
+.toast.whale{border-left:3px solid var(--accent-orange)}
+.toast.signal{border-left:3px solid var(--accent-blue)}
+.toast.alert{border-left:3px solid var(--accent-red)}
+.toast.success{border-left:3px solid var(--accent-green)}
+.toast-close{font-size:1rem;color:var(--text-muted);cursor:pointer;padding:0 2px;line-height:1}
+.toast-close:hover{color:var(--text-primary)}
 
 /* ============================================================
    ROW 1: HEADER
@@ -86,11 +117,14 @@ a:hover{text-decoration:underline}
 .header-logo{font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#3b82f6,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;letter-spacing:2px}
 .header-subtitle{font-size:.7rem;color:var(--text-muted);letter-spacing:1px;text-transform:uppercase}
 .header-status{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-.status-dot{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;color:var(--text-secondary)}
-.status-dot::before{content:'';width:8px;height:8px;border-radius:50%;background:#334155;transition:background var(--transition)}
+.status-dot{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;color:var(--text-secondary);cursor:help;position:relative}
+.status-dot::before{content:'';width:8px;height:8px;border-radius:50%;background:#334155;transition:background var(--transition),box-shadow var(--transition)}
 .status-dot.connected::before{background:var(--accent-green);box-shadow:0 0 6px var(--accent-green)}
 .status-dot.pending::before{background:var(--accent-orange);animation:pulse 1.5s infinite}
 .status-dot.error::before{background:var(--accent-red)}
+.status-dot.unavailable::before{background:#475569}
+.status-dot .tooltip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:8px 12px;font-size:.65rem;color:var(--text-secondary);white-space:nowrap;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.status-dot:hover .tooltip{display:block}
 .header-time{font-size:.7rem;color:var(--text-muted);font-family:var(--font-mono)}
 
 /* ============================================================
@@ -126,18 +160,32 @@ a:hover{text-decoration:underline}
 .signal-meter{position:relative;height:20px;border-radius:10px;background:linear-gradient(90deg,#ef4444,#f59e0b,#8b5cf6,#06b6d4,#10b981);margin:16px 0 8px}
 .signal-meter-pointer{position:absolute;top:-4px;width:16px;height:28px;background:#fff;border-radius:8px;border:2px solid var(--bg-primary);transform:translateX(-50%);transition:left .5s ease;box-shadow:0 2px 8px rgba(0,0,0,.4)}
 .signal-meter-labels{display:flex;justify-content:space-between;font-size:.6rem;color:var(--text-muted)}
+.signal-insight{margin-top:12px;padding:10px 14px;background:var(--bg-primary);border-radius:10px;border-left:3px solid var(--accent-cyan);font-size:.75rem;color:var(--text-secondary);line-height:1.5;text-align:left}
+.signal-insight strong{color:var(--text-primary)}
 
 /* ============================================================
    ROW 3: SPARKLINE
    ============================================================ */
 .chart-container{position:relative;height:200px;width:100%}
 .chart-container canvas{width:100%;height:100%;display:block}
+.chart-tooltip{position:absolute;display:none;background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:8px 12px;font-size:.7rem;pointer-events:none;z-index:10;box-shadow:0 4px 16px rgba(0,0,0,.4);white-space:nowrap}
+.chart-tooltip .tt-price{font-family:var(--font-mono);font-weight:700;font-size:.85rem;color:#fff}
+.chart-tooltip .tt-date{color:var(--text-muted);margin-top:2px}
+.chart-crosshair{position:absolute;top:0;width:1px;height:100%;background:rgba(255,255,255,.15);pointer-events:none;display:none}
+.chart-dot{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--accent-cyan);pointer-events:none;display:none;transform:translate(-50%,-50%);box-shadow:0 0 8px var(--accent-cyan)}
+
+/* ============================================================
+   SEARCH / FILTER INPUT
+   ============================================================ */
+.search-input{width:100%;padding:8px 12px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:.8rem;font-family:var(--font-sans);outline:none;transition:border-color var(--transition);margin-bottom:10px}
+.search-input:focus{border-color:var(--accent-cyan)}
+.search-input::placeholder{color:var(--text-muted)}
 
 /* ============================================================
    ROW 4: ORDER FLOW
    ============================================================ */
 .gauge-container{text-align:center;position:relative}
-.gauge-circle{width:140px;height:140px;border-radius:50%;margin:0 auto 12px;position:relative;display:flex;align-items:center;justify-content:center}
+.gauge-circle{width:140px;height:140px;border-radius:50%;margin:0 auto 12px;position:relative;display:flex;align-items:center;justify-content:center;transition:background .5s ease}
 .gauge-value{font-size:1.8rem;font-weight:700;font-family:var(--font-mono);color:#fff}
 .gauge-label{font-size:.65rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px}
 .depth-bar-container{margin:8px 0}
@@ -146,7 +194,8 @@ a:hover{text-decoration:underline}
 .depth-bid{background:linear-gradient(90deg,transparent,var(--accent-green));transition:width .5s ease}
 .depth-ask{background:linear-gradient(90deg,var(--accent-red),transparent);transition:width .5s ease}
 .flow-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
-.flow-stat{text-align:center;padding:8px;background:var(--bg-primary);border-radius:8px}
+.flow-stat{text-align:center;padding:8px;background:var(--bg-primary);border-radius:8px;transition:background var(--transition)}
+.flow-stat:hover{background:#1a2236}
 .flow-stat-val{font-family:var(--font-mono);font-weight:600;font-size:1rem}
 .flow-stat-lbl{font-size:.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px}
 
@@ -154,7 +203,8 @@ a:hover{text-decoration:underline}
    ROW 4: MARKET OVERVIEW
    ============================================================ */
 .market-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.market-item{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-primary);border-radius:8px;font-size:.8rem}
+.market-item{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-primary);border-radius:8px;font-size:.8rem;transition:background var(--transition),transform var(--transition);cursor:default}
+.market-item:hover{background:#1a2236;transform:translateX(2px)}
 .market-item-label{color:var(--text-muted)}
 .market-item-value{font-family:var(--font-mono);font-weight:600}
 .market-item-value.up{color:var(--accent-green)}
@@ -164,8 +214,8 @@ a:hover{text-decoration:underline}
    ROW 5: SIGNAL FACTORS
    ============================================================ */
 .factor-list{display:flex;flex-direction:column;gap:8px}
-.factor-item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:var(--bg-primary);border-radius:10px;transition:background var(--transition)}
-.factor-item:hover{background:#1a2236}
+.factor-item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;background:var(--bg-primary);border-radius:10px;transition:background var(--transition),transform var(--transition);cursor:default}
+.factor-item:hover{background:#1a2236;transform:translateX(3px)}
 .factor-icon{font-size:1.2rem;width:28px;text-align:center}
 .factor-info{min-width:0}
 .factor-name{font-weight:600;font-size:.85rem}
@@ -183,7 +233,8 @@ a:hover{text-decoration:underline}
    ROW 5: RISK MANAGEMENT
    ============================================================ */
 .risk-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.risk-item{padding:12px;background:var(--bg-primary);border-radius:10px;text-align:center}
+.risk-item{padding:12px;background:var(--bg-primary);border-radius:10px;text-align:center;transition:background var(--transition)}
+.risk-item:hover{background:#1a2236}
 .risk-item-label{font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:4px}
 .risk-item-value{font-family:var(--font-mono);font-weight:700;font-size:1.1rem}
 .risk-item-value.green{color:var(--accent-green)}
@@ -197,10 +248,18 @@ a:hover{text-decoration:underline}
 .risk-level-indicator.high{background:rgba(239,68,68,.15);color:var(--accent-red)}
 .risk-level-indicator.extreme{background:rgba(239,68,68,.25);color:#ff6b6b}
 
+/* Leverage Slider */
+.leverage-control{margin-top:12px;padding:12px;background:var(--bg-primary);border-radius:10px}
+.leverage-control label{font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;display:flex;justify-content:space-between;margin-bottom:6px}
+.leverage-control label span{color:var(--accent-cyan);font-family:var(--font-mono);font-weight:700}
+.leverage-slider{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:linear-gradient(90deg,var(--accent-green),var(--accent-orange),var(--accent-red));border-radius:3px;outline:none;cursor:pointer}
+.leverage-slider::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid var(--accent-cyan);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.leverage-slider::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid var(--accent-cyan);cursor:pointer}
+
 /* ============================================================
    ROW 6: SENTIMENT & FEAR/GREED
    ============================================================ */
-.galaxy-gauge{width:130px;height:130px;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;flex-direction:column;position:relative}
+.galaxy-gauge{width:130px;height:130px;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;flex-direction:column;position:relative;transition:background .5s ease}
 .galaxy-value{font-size:2rem;font-weight:800;font-family:var(--font-mono);color:#fff}
 .galaxy-label{font-size:.6rem;color:var(--text-muted);text-transform:uppercase}
 .sentiment-bars{margin:10px 0}
@@ -210,14 +269,16 @@ a:hover{text-decoration:underline}
 .sentiment-bar-row .fill{height:100%;border-radius:4px;transition:width .5s ease}
 .sentiment-bar-row .val{width:36px;font-family:var(--font-mono);font-weight:600}
 .keywords-cloud{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.keyword-tag{background:var(--bg-primary);padding:3px 10px;border-radius:12px;font-size:.7rem;color:var(--accent-cyan);border:1px solid #1e293b}
+.keyword-tag{background:var(--bg-primary);padding:3px 10px;border-radius:12px;font-size:.7rem;color:var(--accent-cyan);border:1px solid #1e293b;transition:background var(--transition),transform var(--transition);cursor:default}
+.keyword-tag:hover{background:#1a2236;transform:scale(1.05)}
 .fear-greed-big{text-align:center;margin:10px 0}
 .fg-number{font-size:3.5rem;font-weight:800;font-family:var(--font-mono)}
 .fg-label{font-size:1rem;font-weight:600;margin-top:4px}
 .fg-bar{height:14px;border-radius:7px;background:linear-gradient(90deg,#ef4444,#f59e0b,#eab308,#84cc16,#10b981);position:relative;margin:12px 0}
 .fg-pointer{position:absolute;top:-3px;width:12px;height:20px;background:#fff;border-radius:6px;border:2px solid var(--bg-primary);transform:translateX(-50%);transition:left .5s ease}
 .social-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-.social-stat{text-align:center;padding:8px;background:var(--bg-primary);border-radius:8px}
+.social-stat{text-align:center;padding:8px;background:var(--bg-primary);border-radius:8px;transition:background var(--transition)}
+.social-stat:hover{background:#1a2236}
 .social-stat-val{font-family:var(--font-mono);font-weight:600;font-size:1rem;color:var(--text-primary)}
 .social-stat-lbl{font-size:.6rem;color:var(--text-muted);text-transform:uppercase}
 
@@ -234,7 +295,8 @@ a:hover{text-decoration:underline}
 .ta-recommendation.sell{background:rgba(239,68,68,.15);color:var(--accent-red)}
 .ta-recommendation.neutral{background:rgba(100,116,139,.15);color:var(--text-muted)}
 .ta-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
-.ta-card{padding:12px;background:var(--bg-primary);border-radius:10px;display:flex;flex-direction:column;gap:4px;border-left:3px solid transparent;transition:border-color var(--transition)}
+.ta-card{padding:12px;background:var(--bg-primary);border-radius:10px;display:flex;flex-direction:column;gap:4px;border-left:3px solid transparent;transition:border-color var(--transition),background var(--transition),transform var(--transition);cursor:default}
+.ta-card:hover{background:#1a2236;transform:translateY(-2px)}
 .ta-card.buy-signal{border-left-color:var(--accent-green)}
 .ta-card.sell-signal{border-left-color:var(--accent-red)}
 .ta-card.neutral-signal{border-left-color:var(--text-muted)}
@@ -250,8 +312,8 @@ a:hover{text-decoration:underline}
    ROW 8: NEWS & SOCIAL FEEDS
    ============================================================ */
 .feed-list{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
-.feed-item{display:flex;gap:10px;padding:10px;background:var(--bg-primary);border-radius:8px;transition:background var(--transition);cursor:pointer;animation:fadeIn .3s ease}
-.feed-item:hover{background:#1a2236}
+.feed-item{display:flex;gap:10px;padding:10px;background:var(--bg-primary);border-radius:8px;transition:background var(--transition),transform var(--transition);cursor:pointer;animation:fadeIn .3s ease}
+.feed-item:hover{background:#1a2236;transform:translateX(3px)}
 .feed-dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0}
 .feed-dot.positive{background:var(--accent-green)}
 .feed-dot.negative{background:var(--accent-red)}
@@ -263,6 +325,7 @@ a:hover{text-decoration:underline}
 .reddit-badge{display:inline-block;background:rgba(255,69,0,.15);color:#ff6b35;padding:1px 6px;border-radius:4px;font-size:.6rem;font-weight:600}
 .reddit-score{display:flex;align-items:center;gap:3px}
 .reddit-score .arrow{color:var(--accent-orange)}
+.feed-empty{text-align:center;color:var(--text-muted);padding:30px;font-size:.85rem}
 
 /* ============================================================
    ROW 9: INFLUENCERS, XRPL, WHALES
@@ -271,24 +334,27 @@ a:hover{text-decoration:underline}
 .inf-tab{padding:4px 10px;border-radius:8px;font-size:.65rem;font-weight:600;cursor:pointer;background:var(--bg-primary);color:var(--text-muted);border:1px solid transparent;white-space:nowrap;transition:all var(--transition)}
 .inf-tab:hover,.inf-tab.active{color:var(--accent-cyan);border-color:var(--accent-cyan);background:rgba(6,182,212,.08)}
 .inf-list{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
-.inf-item{display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg-primary);border-radius:8px}
+.inf-item{display:flex;align-items:center;gap:10px;padding:8px;background:var(--bg-primary);border-radius:8px;transition:background var(--transition),transform var(--transition);cursor:default}
+.inf-item:hover{background:#1a2236;transform:translateX(2px)}
 .inf-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#fff;flex-shrink:0}
 .inf-info{flex:1;min-width:0}
 .inf-name{font-size:.8rem;font-weight:600}
 .inf-platform{font-size:.6rem;color:var(--text-muted)}
 .inf-cat-badge{font-size:.55rem;padding:2px 6px;border-radius:4px;background:rgba(139,92,246,.15);color:var(--accent-purple);font-weight:600;text-transform:uppercase;white-space:nowrap}
 .inf-weight-bar{width:50px;height:4px;background:var(--bg-secondary);border-radius:2px;overflow:hidden}
-.inf-weight-fill{height:100%;background:var(--accent-cyan);border-radius:2px}
+.inf-weight-fill{height:100%;background:var(--accent-cyan);border-radius:2px;transition:width .5s ease}
 
 /* XRPL stats */
 .xrpl-stats{display:flex;flex-direction:column;gap:8px}
-.xrpl-item{display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg-primary);border-radius:8px}
+.xrpl-item{display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg-primary);border-radius:8px;transition:background var(--transition)}
+.xrpl-item:hover{background:#1a2236}
 .xrpl-label{font-size:.75rem;color:var(--text-muted)}
 .xrpl-value{font-family:var(--font-mono);font-weight:600;font-size:.9rem}
 
 /* Whale alerts */
 .whale-feed{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
-.whale-item{padding:8px 10px;background:var(--bg-primary);border-radius:8px;animation:slideIn .3s ease;border-left:3px solid var(--accent-orange)}
+.whale-item{padding:8px 10px;background:var(--bg-primary);border-radius:8px;animation:slideIn .3s ease;border-left:3px solid var(--accent-orange);transition:background var(--transition)}
+.whale-item:hover{background:#1a2236}
 .whale-amount{font-family:var(--font-mono);font-weight:700;font-size:.9rem;color:var(--accent-orange)}
 .whale-addr{font-size:.65rem;color:var(--text-muted);font-family:var(--font-mono)}
 .whale-time{font-size:.6rem;color:var(--text-muted)}
@@ -321,6 +387,7 @@ a:hover{text-decoration:underline}
   .risk-grid{grid-template-columns:1fr}
   .price-stats{grid-template-columns:1fr 1fr}
   .factor-bar-wrap{width:80px}
+  .toast-container{max-width:calc(100% - 24px);right:12px;top:12px}
 }
 @media(max-width:480px){
   .dashboard{padding:6px}
@@ -331,6 +398,10 @@ a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
+
+<!-- Toast Notification Container -->
+<div class="toast-container" id="toastContainer"></div>
+
 <div class="dashboard" id="app">
 
   <!-- ========== ROW 1: HEADER ========== -->
@@ -342,9 +413,10 @@ a:hover{text-decoration:underline}
       </div>
     </div>
     <div class="header-status" id="connStatus">
-      <span class="status-dot" id="conn-binance">Binance</span>
-      <span class="status-dot" id="conn-coincap">CoinCap</span>
-      <span class="status-dot" id="conn-xrpl">XRPL</span>
+      <span class="status-dot" id="conn-binance">Binance<span class="tooltip">Binance WebSocket - Primary price feed</span></span>
+      <span class="status-dot" id="conn-kraken">Kraken<span class="tooltip">Kraken WebSocket - Secondary price feed</span></span>
+      <span class="status-dot" id="conn-coincap">CoinCap<span class="tooltip">CoinCap WebSocket - Tertiary price feed</span></span>
+      <span class="status-dot" id="conn-xrpl">XRPL<span class="tooltip">XRPL Ledger - On-chain data</span></span>
     </div>
     <div class="header-time" id="lastUpdate">--</div>
   </header>
@@ -380,114 +452,138 @@ a:hover{text-decoration:underline}
         <div class="confidence-label"><span>Confidence</span><span id="confidenceVal">--%</span></div>
         <div class="confidence-bar"><div class="confidence-fill" id="confidenceFill" style="width:0%"></div></div>
       </div>
+      <div class="signal-insight" id="signalInsight">Awaiting data from multiple sources to generate expert signal analysis...</div>
     </div>
   </div>
 
   <!-- ========== ROW 3: SPARKLINE ========== -->
   <div class="row row-full">
     <div class="card">
-      <div class="card-title"><span class="icon">^</span> 7-Day Price History</div>
-      <div class="chart-container"><canvas id="sparkChart"></canvas></div>
+      <div class="card-title" onclick="toggleSection('sparkBody')"><span class="icon">^</span> 7-Day Price History <span class="collapse-icon" id="sparkBody-icon">v</span></div>
+      <div class="card-body" id="sparkBody">
+        <div class="chart-container" id="chartContainer">
+          <canvas id="sparkChart"></canvas>
+          <div class="chart-crosshair" id="chartCrosshair"></div>
+          <div class="chart-dot" id="chartDot"></div>
+          <div class="chart-tooltip" id="chartTooltip"><div class="tt-price"></div><div class="tt-date"></div></div>
+        </div>
+      </div>
     </div>
   </div>
 
   <!-- ========== ROW 4: ORDER FLOW + MARKET ========== -->
   <div class="row row-2col">
     <div class="card">
-      <div class="card-title"><span class="icon">%</span> Real-Time Order Flow</div>
-      <div class="gauge-container">
-        <div class="gauge-circle" id="pressureGauge">
-          <div>
-            <div class="gauge-value" id="pressureVal">--</div>
-            <div class="gauge-label">Buy Pressure</div>
+      <div class="card-title" onclick="toggleSection('orderFlowBody')"><span class="icon">%</span> Real-Time Order Flow <span class="collapse-icon" id="orderFlowBody-icon">v</span></div>
+      <div class="card-body" id="orderFlowBody">
+        <div class="gauge-container">
+          <div class="gauge-circle" id="pressureGauge">
+            <div>
+              <div class="gauge-value" id="pressureVal">--</div>
+              <div class="gauge-label">Buy Pressure</div>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="depth-bar-container">
-        <div class="depth-bar-label"><span>Bids</span><span>Asks</span></div>
-        <div class="depth-bar">
-          <div class="depth-bid" id="depthBid" style="width:50%"></div>
-          <div class="depth-ask" id="depthAsk" style="width:50%"></div>
+        <div class="depth-bar-container">
+          <div class="depth-bar-label"><span>Bids</span><span>Asks</span></div>
+          <div class="depth-bar">
+            <div class="depth-bid" id="depthBid" style="width:50%"></div>
+            <div class="depth-ask" id="depthAsk" style="width:50%"></div>
+          </div>
         </div>
-      </div>
-      <div class="flow-stats">
-        <div class="flow-stat"><div class="flow-stat-val" id="flowVolRatio">--</div><div class="flow-stat-lbl">Vol Ratio</div></div>
-        <div class="flow-stat"><div class="flow-stat-val" id="flowSpread">--</div><div class="flow-stat-lbl">Spread</div></div>
-        <div class="flow-stat"><div class="flow-stat-val" id="flowImbalance">--</div><div class="flow-stat-lbl">Imbalance</div></div>
-        <div class="flow-stat"><div class="flow-stat-val" id="flowTrades">--</div><div class="flow-stat-lbl">Trades/min</div></div>
+        <div class="flow-stats">
+          <div class="flow-stat"><div class="flow-stat-val" id="flowVolRatio">--</div><div class="flow-stat-lbl">Vol Ratio</div></div>
+          <div class="flow-stat"><div class="flow-stat-val" id="flowSpread">--</div><div class="flow-stat-lbl">Spread</div></div>
+          <div class="flow-stat"><div class="flow-stat-val" id="flowImbalance">--</div><div class="flow-stat-lbl">Imbalance</div></div>
+          <div class="flow-stat"><div class="flow-stat-val" id="flowTrades">--</div><div class="flow-stat-lbl">Trades/min</div></div>
+        </div>
       </div>
     </div>
     <div class="card">
-      <div class="card-title"><span class="icon">#</span> Market Overview</div>
-      <div class="market-grid" id="marketGrid"></div>
+      <div class="card-title" onclick="toggleSection('marketBody')"><span class="icon">#</span> Market Overview <span class="collapse-icon" id="marketBody-icon">v</span></div>
+      <div class="card-body" id="marketBody">
+        <div class="market-grid" id="marketGrid"></div>
+      </div>
     </div>
   </div>
 
   <!-- ========== ROW 5: FACTORS + RISK ========== -->
   <div class="row row-2col">
     <div class="card">
-      <div class="card-title"><span class="icon">*</span> Signal Factor Breakdown</div>
-      <div class="factor-list" id="factorList"></div>
+      <div class="card-title" onclick="toggleSection('factorsBody')"><span class="icon">*</span> Signal Factor Breakdown <span class="collapse-icon" id="factorsBody-icon">v</span></div>
+      <div class="card-body" id="factorsBody">
+        <div class="factor-list" id="factorList"></div>
+      </div>
     </div>
     <div class="card">
-      <div class="card-title"><span class="icon">!</span> Risk Management</div>
-      <div class="risk-grid" id="riskGrid"></div>
-      <div class="risk-level-bar" id="riskLevelBar"></div>
+      <div class="card-title" onclick="toggleSection('riskBody')"><span class="icon">!</span> Risk Management <span class="collapse-icon" id="riskBody-icon">v</span></div>
+      <div class="card-body" id="riskBody">
+        <div class="risk-grid" id="riskGrid"></div>
+        <div class="risk-level-bar" id="riskLevelBar"></div>
+        <div class="leverage-control">
+          <label>Adjust Leverage <span id="leverageDisplay">1.68x</span></label>
+          <input type="range" class="leverage-slider" id="leverageSlider" min="1" max="10" step="0.1" value="1.68">
+        </div>
+      </div>
     </div>
   </div>
 
   <!-- ========== ROW 6: SENTIMENT + FEAR/GREED ========== -->
   <div class="row row-2col">
     <div class="card">
-      <div class="card-title"><span class="icon">@</span> Sentiment Intelligence</div>
-      <div style="display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start">
-        <div style="text-align:center">
-          <div class="galaxy-gauge" id="galaxyGauge">
-            <div class="galaxy-value" id="galaxyVal">--</div>
-            <div class="galaxy-label">Galaxy Score</div>
+      <div class="card-title" onclick="toggleSection('sentimentBody')"><span class="icon">@</span> Sentiment Intelligence <span class="collapse-icon" id="sentimentBody-icon">v</span></div>
+      <div class="card-body" id="sentimentBody">
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start">
+          <div style="text-align:center">
+            <div class="galaxy-gauge" id="galaxyGauge">
+              <div class="galaxy-value" id="galaxyVal">--</div>
+              <div class="galaxy-label">Galaxy Score</div>
+            </div>
+            <div style="margin-top:8px">
+              <div class="price-stat-label">AltRank</div>
+              <div class="price-stat-value" id="altRankVal">--</div>
+            </div>
           </div>
-          <div style="margin-top:8px">
-            <div class="price-stat-label">AltRank</div>
-            <div class="price-stat-value" id="altRankVal">--</div>
+          <div>
+            <div class="flow-stats" style="margin-top:0;margin-bottom:10px">
+              <div class="flow-stat"><div class="flow-stat-val" id="socialVol">--</div><div class="flow-stat-lbl">Social Volume</div></div>
+              <div class="flow-stat"><div class="flow-stat-val" id="socialVel">--</div><div class="flow-stat-lbl">Social Velocity</div></div>
+              <div class="flow-stat"><div class="flow-stat-val" id="sentVolatility">--</div><div class="flow-stat-lbl">Sent. Volatility</div></div>
+              <div class="flow-stat"><div class="flow-stat-val" id="sentScore">--</div><div class="flow-stat-lbl">Sentiment</div></div>
+            </div>
+            <div class="sentiment-bars" id="sentBars"></div>
           </div>
         </div>
-        <div>
-          <div class="flow-stats" style="margin-top:0;margin-bottom:10px">
-            <div class="flow-stat"><div class="flow-stat-val" id="socialVol">--</div><div class="flow-stat-lbl">Social Volume</div></div>
-            <div class="flow-stat"><div class="flow-stat-val" id="socialVel">--</div><div class="flow-stat-lbl">Social Velocity</div></div>
-            <div class="flow-stat"><div class="flow-stat-val" id="sentVolatility">--</div><div class="flow-stat-lbl">Sent. Volatility</div></div>
-            <div class="flow-stat"><div class="flow-stat-val" id="sentScore">--</div><div class="flow-stat-lbl">Sentiment</div></div>
-          </div>
-          <div class="sentiment-bars" id="sentBars"></div>
-        </div>
+        <div class="card-title" style="margin-top:10px"><span class="icon">#</span> Top Keywords</div>
+        <div class="keywords-cloud" id="keywordsCloud"></div>
       </div>
-      <div class="card-title" style="margin-top:10px"><span class="icon">#</span> Top Keywords</div>
-      <div class="keywords-cloud" id="keywordsCloud"></div>
     </div>
     <div class="card">
-      <div class="card-title"><span class="icon">~</span> Fear &amp; Greed Index</div>
-      <div class="fear-greed-big">
-        <div class="fg-number" id="fgNumber">--</div>
-        <div class="fg-label" id="fgLabel">--</div>
-      </div>
-      <div class="fg-bar"><div class="fg-pointer" id="fgPointer" style="left:50%"></div></div>
-      <div style="display:flex;justify-content:space-between;font-size:.6rem;color:var(--text-muted);margin-bottom:14px"><span>Extreme Fear</span><span>Extreme Greed</span></div>
-      <div class="card-title"><span class="icon">@</span> Community Sentiment</div>
-      <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap">
-        <div style="flex:1;text-align:center;padding:8px;background:var(--bg-primary);border-radius:8px">
-          <div style="font-size:.65rem;color:var(--text-muted)">CoinGecko Up</div>
-          <div style="font-family:var(--font-mono);font-weight:600;color:var(--accent-green)" id="cgUp">--%</div>
+      <div class="card-title" onclick="toggleSection('fgBody')"><span class="icon">~</span> Fear &amp; Greed Index <span class="collapse-icon" id="fgBody-icon">v</span></div>
+      <div class="card-body" id="fgBody">
+        <div class="fear-greed-big">
+          <div class="fg-number" id="fgNumber">--</div>
+          <div class="fg-label" id="fgLabel">--</div>
         </div>
-        <div style="flex:1;text-align:center;padding:8px;background:var(--bg-primary);border-radius:8px">
-          <div style="font-size:.65rem;color:var(--text-muted)">CoinGecko Down</div>
-          <div style="font-family:var(--font-mono);font-weight:600;color:var(--accent-red)" id="cgDown">--%</div>
+        <div class="fg-bar"><div class="fg-pointer" id="fgPointer" style="left:50%"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:.6rem;color:var(--text-muted);margin-bottom:14px"><span>Extreme Fear</span><span>Extreme Greed</span></div>
+        <div class="card-title"><span class="icon">@</span> Community Sentiment</div>
+        <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+          <div style="flex:1;text-align:center;padding:8px;background:var(--bg-primary);border-radius:8px">
+            <div style="font-size:.65rem;color:var(--text-muted)">CoinGecko Up</div>
+            <div style="font-family:var(--font-mono);font-weight:600;color:var(--accent-green)" id="cgUp">--%</div>
+          </div>
+          <div style="flex:1;text-align:center;padding:8px;background:var(--bg-primary);border-radius:8px">
+            <div style="font-size:.65rem;color:var(--text-muted)">CoinGecko Down</div>
+            <div style="font-family:var(--font-mono);font-weight:600;color:var(--accent-red)" id="cgDown">--%</div>
+          </div>
         </div>
-      </div>
-      <div class="social-stats">
-        <div class="social-stat"><div class="social-stat-val" id="redditSubs">--</div><div class="social-stat-lbl">Reddit Subs</div></div>
-        <div class="social-stat"><div class="social-stat-val" id="redditActive">--</div><div class="social-stat-lbl">Reddit Active</div></div>
-        <div class="social-stat"><div class="social-stat-val" id="twitterFollow">--</div><div class="social-stat-lbl">Twitter Followers</div></div>
-        <div class="social-stat"><div class="social-stat-val" id="githubStars">--</div><div class="social-stat-lbl">GitHub Stars</div></div>
+        <div class="social-stats">
+          <div class="social-stat"><div class="social-stat-val" id="redditSubs">--</div><div class="social-stat-lbl">Reddit Subs</div></div>
+          <div class="social-stat"><div class="social-stat-val" id="redditActive">--</div><div class="social-stat-lbl">Reddit Active</div></div>
+          <div class="social-stat"><div class="social-stat-val" id="twitterFollow">--</div><div class="social-stat-lbl">Twitter Followers</div></div>
+          <div class="social-stat"><div class="social-stat-val" id="githubStars">--</div><div class="social-stat-lbl">GitHub Stars</div></div>
+        </div>
       </div>
     </div>
   </div>
@@ -495,38 +591,52 @@ a:hover{text-decoration:underline}
   <!-- ========== ROW 7: TECHNICAL ANALYSIS ========== -->
   <div class="row row-full">
     <div class="card">
-      <div class="card-title"><span class="icon">^</span> Technical Analysis</div>
-      <div class="ta-summary" id="taSummary"></div>
-      <div class="ta-grid" id="taGrid"></div>
+      <div class="card-title" onclick="toggleSection('taBody')"><span class="icon">^</span> Technical Analysis <span class="collapse-icon" id="taBody-icon">v</span></div>
+      <div class="card-body" id="taBody">
+        <div class="ta-summary" id="taSummary"></div>
+        <div class="ta-grid" id="taGrid"></div>
+      </div>
     </div>
   </div>
 
   <!-- ========== ROW 8: NEWS + REDDIT ========== -->
   <div class="row row-2col">
     <div class="card">
-      <div class="card-title"><span class="icon">!</span> XRP News Feed</div>
-      <div class="feed-list" id="newsFeed"></div>
+      <div class="card-title" onclick="toggleSection('newsBody')"><span class="icon">!</span> XRP News Feed <span class="collapse-icon" id="newsBody-icon">v</span></div>
+      <div class="card-body" id="newsBody">
+        <input type="text" class="search-input" id="newsSearch" placeholder="Search news..." oninput="renderNews()">
+        <div class="feed-list" id="newsFeed"></div>
+      </div>
     </div>
     <div class="card">
-      <div class="card-title"><span class="icon">@</span> Reddit Social Feed</div>
-      <div class="feed-list" id="redditFeed"></div>
+      <div class="card-title" onclick="toggleSection('redditBody')"><span class="icon">@</span> Reddit Social Feed <span class="collapse-icon" id="redditBody-icon">v</span></div>
+      <div class="card-body" id="redditBody">
+        <input type="text" class="search-input" id="redditSearch" placeholder="Search Reddit posts..." oninput="renderReddit()">
+        <div class="feed-list" id="redditFeed"></div>
+      </div>
     </div>
   </div>
 
   <!-- ========== ROW 9: INFLUENCERS + XRPL + WHALES ========== -->
   <div class="row row-3col">
     <div class="card">
-      <div class="card-title"><span class="icon">*</span> Influencer Tracker <span id="infCount" style="margin-left:auto;color:var(--accent-cyan);font-size:.8rem">0</span></div>
-      <div class="inf-tabs" id="infTabs"></div>
-      <div class="inf-list" id="infList"></div>
+      <div class="card-title" onclick="toggleSection('infBody')"><span class="icon">*</span> Influencer Tracker <span id="infCount" style="margin-left:auto;color:var(--accent-cyan);font-size:.8rem">0</span> <span class="collapse-icon" id="infBody-icon">v</span></div>
+      <div class="card-body" id="infBody">
+        <div class="inf-tabs" id="infTabs"></div>
+        <div class="inf-list" id="infList"></div>
+      </div>
     </div>
     <div class="card">
-      <div class="card-title"><span class="icon">#</span> XRPL On-Chain</div>
-      <div class="xrpl-stats" id="xrplStats"></div>
+      <div class="card-title" onclick="toggleSection('xrplBody')"><span class="icon">#</span> XRPL On-Chain <span class="collapse-icon" id="xrplBody-icon">v</span></div>
+      <div class="card-body" id="xrplBody">
+        <div class="xrpl-stats" id="xrplStats"></div>
+      </div>
     </div>
     <div class="card">
-      <div class="card-title"><span class="icon">!</span> Whale Alerts</div>
-      <div class="whale-feed" id="whaleFeed"></div>
+      <div class="card-title" onclick="toggleSection('whaleBody')"><span class="icon">!</span> Whale Alerts <span class="collapse-icon" id="whaleBody-icon">v</span></div>
+      <div class="card-body" id="whaleBody">
+        <div class="whale-feed" id="whaleFeed"></div>
+      </div>
     </div>
   </div>
 
@@ -557,7 +667,8 @@ var S = {
   connections:{},dataSourceStatus:{},
   cryptoCompareSocial:{},coinPaprika:{},
   lastUpdated:null,sparkline7d:[],
-  _lastPrice:null,_infTab:'all'
+  _lastPrice:null,_infTab:'all',_leverage:1.68,
+  _collapsedSections:{},_prevSignal:null
 };
 
 /* ============================================================
@@ -572,6 +683,45 @@ function timeAgo(d){if(!d)return'--';var diff=(Date.now()-new Date(d).getTime())
 function truncAddr(a){if(!a||a.length<12)return v(a);return a.slice(0,6)+'...'+a.slice(-4)}
 function $(id){return document.getElementById(id)}
 function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+/* ============================================================
+   TOAST NOTIFICATION SYSTEM
+   ============================================================ */
+var toastQueue=[];
+function showToast(type,title,msg,duration){
+  duration=duration||5000;
+  var container=$('toastContainer');
+  var toast=document.createElement('div');
+  toast.className='toast '+type;
+  var icons={whale:'W',signal:'S',alert:'!',success:'+'};
+  toast.innerHTML='<span class="toast-icon">'+(icons[type]||'i')+'</span><div class="toast-body"><div class="toast-title">'+esc(title)+'</div><div class="toast-msg">'+esc(msg)+'</div><div class="toast-time">Just now</div></div><span class="toast-close" onclick="this.parentElement.classList.add(\'removing\');setTimeout(function(){this.parentElement.remove()}.bind(this),300)">x</span>';
+  container.appendChild(toast);
+  // Auto-remove
+  setTimeout(function(){
+    if(toast.parentElement){toast.classList.add('removing');setTimeout(function(){if(toast.parentElement)toast.remove()},300)}
+  },duration);
+  // Limit visible toasts
+  var toasts=container.querySelectorAll('.toast');
+  if(toasts.length>5){toasts[0].remove()}
+}
+
+/* ============================================================
+   COLLAPSIBLE SECTIONS
+   ============================================================ */
+function toggleSection(id){
+  var body=$(id);
+  var icon=$(id+'-icon');
+  if(!body)return;
+  if(body.classList.contains('collapsed')){
+    body.classList.remove('collapsed');
+    if(icon)icon.classList.remove('collapsed');
+    S._collapsedSections[id]=false;
+  }else{
+    body.classList.add('collapsed');
+    if(icon)icon.classList.add('collapsed');
+    S._collapsedSections[id]=true;
+  }
+}
 
 /* ============================================================
    WEBSOCKET CONNECTION MANAGER
@@ -620,14 +770,24 @@ function handleMessage(msg){
     case'init':case'full_update':applyFull(d);break;
     case'price':throttlePrice(d);break;
     case'ticker':Object.assign(S.ticker,d);renderTicker();break;
-    case'signal':Object.assign(S.signal,d);renderSignal();break;
+    case'signal':
+      var prevSig=S.signal.signal;
+      Object.assign(S.signal,d);
+      renderSignal();
+      // Notify on signal change
+      if(prevSig&&d.signal&&prevSig!==d.signal){
+        showToast('signal','Signal Changed',d.signal+' @ '+n(d.confidence,0)+'% confidence - '+v(d.action));
+      }
+      break;
     case'orderbook':Object.assign(S.orderFlow,d);renderOrderFlow();break;
     case'metrics':Object.assign(S.orderFlow,d);renderOrderFlow();break;
     case'ledger':Object.assign(S.xrpl,d);renderXRPL();break;
     case'whale_alert':
       S.whaleAlerts.unshift(Object.assign({timestamp:new Date().toISOString()},d));
       if(S.whaleAlerts.length>50)S.whaleAlerts.length=50;
-      renderWhales();break;
+      renderWhales();
+      showToast('whale','Whale Alert',fmtBig(d.amount)+' XRP moved ('+v(d.type,'transfer')+')',8000);
+      break;
     case'large_trade':
       S.whaleAlerts.unshift({type:'trade',amount:d.value||d.quantity,from:d.side,to:'$'+n(d.price,4),timestamp:new Date().toISOString()});
       if(S.whaleAlerts.length>50)S.whaleAlerts.length=50;
@@ -722,7 +882,7 @@ function renderPrice(oldPrice){
 function renderTicker(){renderPrice(S._lastPrice)}
 
 /* ============================================================
-   RENDER: SIGNAL
+   RENDER: SIGNAL with Expert Insights
    ============================================================ */
 function renderSignal(){
   var s=S.signal,card=$('signalCard');
@@ -734,7 +894,7 @@ function renderSignal(){
   $('signalEmoji').textContent=v(s.emoji,'--');
   var st=$('signalText');st.textContent=v(sig,'--');st.className='signal-text '+cls;
   $('signalAction').textContent=v(s.action,'Waiting for signal...');
-  $('leverageBadge').textContent=n(s.leverage,2)+'x';
+  $('leverageBadge').textContent=n(S._leverage,2)+'x';
   var score=s.score!=null?Number(s.score):0;
   var pp=((score+100)/200)*100;
   pp=Math.max(2,Math.min(98,pp));
@@ -742,6 +902,60 @@ function renderSignal(){
   var conf=s.confidence!=null?Number(s.confidence):0;
   $('confidenceVal').textContent=n(conf,1)+'%';
   $('confidenceFill').style.width=Math.min(100,Math.max(0,conf))+'%';
+
+  // Expert insight generation
+  var insight=generateInsight(s);
+  $('signalInsight').innerHTML=insight;
+}
+
+function generateInsight(s){
+  if(!s||!s.factors||!s.factors.length)return'Awaiting data from multiple sources to generate expert signal analysis...';
+
+  var factors=s.factors||[];
+  var score=s.score||0;
+  var conf=s.confidence||0;
+  var sig=(s.signal||'').toUpperCase();
+
+  // Find strongest and weakest factors
+  var sorted=factors.slice().sort(function(a,b){return Math.abs(b.score)-Math.abs(a.score)});
+  var strongest=sorted[0];
+  var weakest=sorted[sorted.length-1];
+
+  // Count bullish vs bearish factors
+  var bullish=0,bearish=0,neutral=0;
+  for(var i=0;i<factors.length;i++){
+    if(factors[i].score>10)bullish++;
+    else if(factors[i].score<-10)bearish++;
+    else neutral++;
+  }
+
+  var parts=[];
+
+  // Signal strength assessment
+  if(Math.abs(score)>60)parts.push('<strong>High-conviction '+sig+' signal</strong> with '+bullish+'/'+factors.length+' factors aligned.');
+  else if(Math.abs(score)>30)parts.push('<strong>Moderate '+sig+' bias</strong> detected across '+factors.length+' factors.');
+  else parts.push('<strong>Mixed signals</strong> - '+bullish+' bullish, '+bearish+' bearish, '+neutral+' neutral factors.');
+
+  // Key driver
+  if(strongest)parts.push('Primary driver: <strong>'+esc(strongest.name)+'</strong> ('+(strongest.score>0?'+':'')+n(strongest.score,0)+').');
+
+  // Divergence warning
+  if(bullish>0&&bearish>0&&Math.min(bullish,bearish)>=2){
+    parts.push('Factor divergence detected - conflicting signals from '+bearish+' bearish and '+bullish+' bullish indicators suggest caution.');
+  }
+
+  // Confidence assessment
+  if(conf>70)parts.push('High confidence supports position entry.');
+  else if(conf>40)parts.push('Moderate confidence - consider smaller position size.');
+  else parts.push('Low confidence - wait for stronger alignment before entering.');
+
+  // Risk note
+  if(s.risk&&s.risk.riskLevel){
+    var rl=String(s.risk.riskLevel).toUpperCase();
+    if(rl==='EXTREME'||rl==='HIGH')parts.push('Risk level: <strong style="color:var(--accent-red)">'+rl+'</strong> - strict stop-loss adherence critical.');
+  }
+
+  return parts.join(' ');
 }
 
 /* ============================================================
@@ -824,7 +1038,7 @@ function renderRisk(){
   var items=[
     ['Stop Loss',r.stopLoss?'$'+n(r.stopLoss.price,4)+' ('+n(r.stopLoss.pct,2)+'%)':'--','red'],
     ['Take Profit',r.takeProfit?'$'+n(r.takeProfit.price,4)+' ('+n(r.takeProfit.pct,2)+'%)':'--','green'],
-    ['Liquidation',r.liquidation?'$'+n(r.liquidation,4):'--','orange'],
+    ['Liquidation',r.liquidation!=null?'$'+n(r.liquidation,4):'--','orange'],
     ['Risk/Reward',n(r.riskReward,2),'blue'],
     ['Position Size',r.positionSize!=null?n(r.positionSize,1)+'%':'--','blue'],
     ['Eff. Exposure',r.effectiveExposure!=null?n(r.effectiveExposure,1)+'%':'--','orange'],
@@ -837,10 +1051,23 @@ function renderRisk(){
   }
   $('riskGrid').innerHTML=out;
   var lvl=(v(r.riskLevel,'unknown')+'').toLowerCase();
-  var lc=lvl==='low'?'low':lvl==='medium'?'medium':lvl==='high'?'high':'medium';
+  var lc=lvl==='low'||lvl==='low-moderate'?'low':lvl==='moderate'?'medium':lvl==='high'?'high':'medium';
   if(lvl==='extreme'||lvl==='very high')lc='extreme';
   $('riskLevelBar').innerHTML='<div class="risk-item-label">Risk Level</div><div class="risk-level-indicator '+lc+'">'+esc(v(r.riskLevel,'--').toString().toUpperCase())+'</div><div style="margin-top:6px;font-size:.75rem;color:var(--text-muted)">Direction: <strong style="color:var(--text-primary)">'+esc(v(r.direction,'--'))+'</strong></div>';
 }
+
+/* ============================================================
+   LEVERAGE SLIDER
+   ============================================================ */
+$('leverageSlider').addEventListener('input',function(){
+  S._leverage=parseFloat(this.value);
+  $('leverageDisplay').textContent=S._leverage.toFixed(2)+'x';
+  $('leverageBadge').textContent=S._leverage.toFixed(2)+'x';
+  // Send leverage update to server via WebSocket
+  if(ws&&ws.readyState===WebSocket.OPEN){
+    ws.send(JSON.stringify({type:'set_leverage',leverage:S._leverage}));
+  }
+});
 
 /* ============================================================
    RENDER: SENTIMENT
@@ -965,33 +1192,45 @@ function taC(name,val,fn){
 }
 
 /* ============================================================
-   RENDER: NEWS FEED
+   RENDER: NEWS FEED with Search
    ============================================================ */
 function renderNews(){
-  var arts=S.newsArticles||[],out='';
+  var arts=S.newsArticles||[];
+  var search=($('newsSearch')?$('newsSearch').value:'').toLowerCase().trim();
+  if(search){
+    arts=arts.filter(function(a){return(a.title||'').toLowerCase().indexOf(search)>=0||(a.source||'').toLowerCase().indexOf(search)>=0||(a.snippet||'').toLowerCase().indexOf(search)>=0});
+  }
+  var out='';
   for(var i=0;i<arts.length;i++){
     var a=arts[i];
     var sc=a.sentimentScore>0.1?'positive':a.sentimentScore<-0.1?'negative':'neutral-dot';
-    out+='<a class="feed-item" href="'+esc(v(a.link,'#'))+'" target="_blank" rel="noopener"><div class="feed-dot '+sc+'"></div><div class="feed-content"><div class="feed-title">'+esc(v(a.title))+'</div><div class="feed-meta"><span class="feed-source">'+esc(v(a.source))+'</span><span>'+timeAgo(a.date)+'</span></div>';
+    out+='<a class="feed-item" href="'+esc(v(a.link,'#'))+'" target="_blank" rel="noopener"><div class="feed-dot '+sc+'"></div><div class="feed-content"><div class="feed-title">'+esc(v(a.title))+'</div><div class="feed-meta"><span class="feed-source">'+esc(v(a.source))+'</span><span>'+timeAgo(a.date)+'</span>';
+    if(a.sentimentScore!=null)out+='<span style="color:'+(a.sentimentScore>0?'var(--accent-green)':'var(--accent-red)')+'">'+n(a.sentimentScore,2)+'</span>';
+    out+='</div>';
     if(a.snippet)out+='<div style="font-size:.7rem;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.snippet)+'</div>';
     out+='</div></a>';
   }
-  if(!arts.length)out='<div style="text-align:center;color:var(--text-muted);padding:30px">No news articles available</div>';
+  if(!arts.length)out='<div class="feed-empty">'+(search?'No results for "'+esc(search)+'"':'No news articles available')+'</div>';
   $('newsFeed').innerHTML=out;
 }
 
 /* ============================================================
-   RENDER: REDDIT FEED
+   RENDER: REDDIT FEED with Search
    ============================================================ */
 function renderReddit(){
-  var posts=S.redditPosts||[],out='';
+  var posts=S.redditPosts||[];
+  var search=($('redditSearch')?$('redditSearch').value:'').toLowerCase().trim();
+  if(search){
+    posts=posts.filter(function(p){return(p.title||'').toLowerCase().indexOf(search)>=0||(p.subreddit||'').toLowerCase().indexOf(search)>=0||(p.author||'').toLowerCase().indexOf(search)>=0});
+  }
+  var out='';
   for(var i=0;i<posts.length;i++){
     var p=posts[i];
     out+='<a class="feed-item" href="'+esc(v(p.url,'#'))+'" target="_blank" rel="noopener"><div class="feed-content"><div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;flex-wrap:wrap"><span class="reddit-badge">r/'+esc(v(p.subreddit,'xrp'))+'</span>';
     if(p.flair)out+='<span style="font-size:.6rem;color:var(--accent-purple)">'+esc(p.flair)+'</span>';
     out+='</div><div class="feed-title">'+esc(v(p.title))+'</div><div class="feed-meta"><span>u/'+esc(v(p.author))+'</span><span class="reddit-score"><span class="arrow">^</span> '+fmtNum(p.score)+'</span><span>'+v(p.numComments,0)+' comments</span><span>'+timeAgo(p.created)+'</span></div></div></a>';
   }
-  if(!posts.length)out='<div style="text-align:center;color:var(--text-muted);padding:30px">No Reddit posts available</div>';
+  if(!posts.length)out='<div class="feed-empty">'+(search?'No results for "'+esc(search)+'"':'No Reddit posts available')+'</div>';
   $('redditFeed').innerHTML=out;
 }
 
@@ -1068,14 +1307,15 @@ function renderWhales(){
    RENDER: CONNECTIONS
    ============================================================ */
 function renderConnections(){
-  var c=S.connections,map={binance:'conn-binance',coincap:'conn-coincap',xrpl:'conn-xrpl'};
+  var c=S.connections,map={binance:'conn-binance',kraken:'conn-kraken',coincap:'conn-coincap',xrpl:'conn-xrpl'};
   for(var key in map){
     var el=$(map[key]);if(!el)continue;
     el.className='status-dot';
     var st=c[key];
     if(st===true||st==='connected'||st==='open')el.classList.add('connected');
     else if(st==='connecting'||st==='pending')el.classList.add('pending');
-    else if(st===false||st==='error'||st==='closed')el.classList.add('error');
+    else if(st==='unavailable')el.classList.add('unavailable');
+    else if(st===false||st==='error'||st==='closed'||st==='disconnected')el.classList.add('error');
   }
 }
 
@@ -1084,13 +1324,14 @@ function renderConnections(){
    ============================================================ */
 function renderSources(){
   var ds=S.dataSourceStatus||{};
-  var src=['binance','coincap','xrpl','coingecko','reddit','news','coinpaprika','cryptocompare','feargreed'];
-  var lbl={binance:'Binance WS',coincap:'CoinCap WS',xrpl:'XRPL WS',coingecko:'CoinGecko',reddit:'Reddit',news:'News RSS',coinpaprika:'CoinPaprika',cryptocompare:'CryptoCompare',feargreed:'Fear&Greed'};
+  var src=['binance','kraken','coincap','xrpl','coingecko','reddit','news','coinpaprika','cryptocompare','feargreed'];
+  var lbl={binance:'Binance WS',kraken:'Kraken WS',coincap:'CoinCap WS',xrpl:'XRPL WS',coingecko:'CoinGecko',reddit:'Reddit',news:'News RSS',coinpaprika:'CoinPaprika',cryptocompare:'CryptoCompare',feargreed:'Fear&Greed'};
   var out='';
   for(var i=0;i<src.length;i++){
     var k=src[i],st=ds[k],cls='';
     if(st===true||st==='ok'||st==='connected')cls='connected';
     else if(st==='pending'||st==='connecting')cls='pending';
+    else if(st==='unavailable')cls='unavailable';
     else if(st===false||st==='error')cls='error';
     out+='<span class="status-dot '+cls+'">'+(lbl[k]||k)+'</span>';
   }
@@ -1098,11 +1339,14 @@ function renderSources(){
 }
 
 /* ============================================================
-   RENDER: 7-DAY SPARKLINE CHART (Canvas)
+   RENDER: 7-DAY SPARKLINE CHART (Interactive Canvas)
    ============================================================ */
+var chartState={pad:{top:20,right:60,bottom:30,left:10},data:null,min:0,max:0,range:0,cw:0,ch:0,w:0,ht:0};
+
 function renderSparkline(){
   var data=S.sparkline7d;
   if(!data||!data.length)return;
+  chartState.data=data;
   var canvas=$('sparkChart'),ct=canvas.parentElement;
   var dpr=window.devicePixelRatio||1;
   var w=ct.clientWidth,ht=ct.clientHeight;
@@ -1111,11 +1355,13 @@ function renderSparkline(){
   var ctx=canvas.getContext('2d');
   ctx.scale(dpr,dpr);ctx.clearRect(0,0,w,ht);
 
-  var pad={top:20,right:60,bottom:30,left:10};
+  var pad=chartState.pad;
   var cw=w-pad.left-pad.right,ch=ht-pad.top-pad.bottom;
+  chartState.cw=cw;chartState.ch=ch;chartState.w=w;chartState.ht=ht;
   var min=Infinity,max=-Infinity;
   for(var i=0;i<data.length;i++){if(data[i]<min)min=data[i];if(data[i]>max)max=data[i]}
   var range=max-min||1;min-=range*0.05;max+=range*0.05;range=max-min;
+  chartState.min=min;chartState.max=max;chartState.range=range;
 
   function xP(i){return pad.left+(i/(data.length-1))*cw}
   function yP(v){return pad.top+(1-(v-min)/range)*ch}
@@ -1156,6 +1402,60 @@ function renderSparkline(){
   ctx.fillStyle='#fff';ctx.font='bold 11px '+getComputedStyle(document.body).fontFamily;
   ctx.textAlign='right';ctx.fillText('$'+data[data.length-1].toFixed(4),lx-12,ly-10);
 }
+
+/* Interactive Chart Hover */
+(function(){
+  var container=$('chartContainer');
+  var crosshair=$('chartCrosshair');
+  var dot=$('chartDot');
+  var tooltip=$('chartTooltip');
+
+  container.addEventListener('mousemove',function(e){
+    var data=chartState.data;
+    if(!data||!data.length)return;
+    var rect=container.getBoundingClientRect();
+    var mx=e.clientX-rect.left;
+    var pad=chartState.pad;
+    var cw=chartState.cw;
+
+    // Calculate index
+    var ratio=(mx-pad.left)/cw;
+    ratio=Math.max(0,Math.min(1,ratio));
+    var idx=Math.round(ratio*(data.length-1));
+    var price=data[idx];
+
+    // X/Y positions
+    var xPos=pad.left+(idx/(data.length-1))*cw;
+    var yPos=pad.top+(1-(price-chartState.min)/chartState.range)*chartState.ch;
+
+    // Show crosshair & dot
+    crosshair.style.display='block';
+    crosshair.style.left=xPos+'px';
+    dot.style.display='block';
+    dot.style.left=xPos+'px';
+    dot.style.top=yPos+'px';
+
+    // Tooltip
+    tooltip.style.display='block';
+    var ttLeft=xPos+12;
+    if(ttLeft+150>chartState.w)ttLeft=xPos-162;
+    tooltip.style.left=ttLeft+'px';
+    tooltip.style.top=(yPos-30)+'px';
+
+    // Calculate approximate date
+    var daysAgo=7-((idx/data.length)*7);
+    var dateStr=daysAgo<0.5?'Now':daysAgo.toFixed(1)+'d ago';
+
+    tooltip.querySelector('.tt-price').textContent='$'+price.toFixed(4);
+    tooltip.querySelector('.tt-date').textContent=dateStr;
+  });
+
+  container.addEventListener('mouseleave',function(){
+    crosshair.style.display='none';
+    dot.style.display='none';
+    tooltip.style.display='none';
+  });
+})();
 
 /* ============================================================
    RESIZE HANDLER

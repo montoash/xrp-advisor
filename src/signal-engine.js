@@ -266,15 +266,15 @@ class SignalEngine {
     else riskLevel = 'LOW-MODERATE';
 
     return {
-      positionSize: `${positionPct}%`,
-      effectiveExposure: `${effectiveExposure.toFixed(1)}%`,
-      stopLoss: { pct: `${stopPct.toFixed(2)}%`, price: `$${stopPrice.toFixed(4)}` },
-      takeProfit: { pct: `${tpPct.toFixed(2)}%`, price: `$${tpPrice.toFixed(4)}` },
-      liquidation: `$${liqPrice.toFixed(4)}`,
-      riskReward,
+      positionSize: positionPct,
+      effectiveExposure: parseFloat(effectiveExposure.toFixed(1)),
+      stopLoss: { pct: parseFloat(stopPct.toFixed(2)), price: parseFloat(stopPrice.toFixed(4)) },
+      takeProfit: { pct: parseFloat(tpPct.toFixed(2)), price: parseFloat(tpPrice.toFixed(4)) },
+      liquidation: parseFloat(liqPrice.toFixed(4)),
+      riskReward: parseFloat(riskReward),
       riskLevel,
-      maxLoss: `${(stopPct * leverage).toFixed(2)}%`,
-      maxGain: `${(tpPct * leverage).toFixed(2)}%`,
+      maxLoss: parseFloat((stopPct * leverage).toFixed(2)),
+      maxGain: parseFloat((tpPct * leverage).toFixed(2)),
       direction: isLong ? 'LONG' : 'SHORT'
     };
   }

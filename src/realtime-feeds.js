@@ -5,7 +5,8 @@
  *
  * Sources:
  *   - Binance WebSocket (XRP/USDT trades + order book) - with .US fallback
- *   - CoinCap WebSocket (real-time prices - always-on, promotes to primary)
+ *   - Kraken WebSocket (XRP/USD real-time prices) - reliable free backup
+ *   - CoinCap WebSocket (real-time prices) - secondary backup
  *   - XRPL WebSocket (on-chain data)
  */
 
@@ -32,6 +33,13 @@ class RealtimeFeeds {
     this._binanceEndpointIndex = 0;
     this._binanceActive = false;
     this._binanceGaveUp = false;
+
+    // Kraken state
+    this._krakenActive = false;
+    this._krakenGaveUp = false;
+
+    // CoinCap state
+    this._coincapActive = false;
 
     // Aggregated metrics
     this.metrics = {
@@ -60,6 +68,9 @@ class RealtimeFeeds {
       feeBurned: 0,
       lastLedgerTime: null,
     };
+
+    // Heartbeat intervals
+    this._heartbeats = {};
   }
 
   on(event, callback) {
@@ -87,7 +98,7 @@ class RealtimeFeeds {
   _tryBinanceEndpoint() {
     if (this._binanceEndpointIndex >= this._binanceEndpoints.length) {
       console.log('[WS] All Binance endpoints unavailable in your region');
-      console.log('[WS] Using CoinCap as primary price feed (real-time via WebSocket)');
+      console.log('[WS] Using Kraken/CoinCap as primary price feed');
       this._binanceGaveUp = true;
       this._binanceActive = false;
       this.emit('binance_unavailable', {});
@@ -166,7 +177,7 @@ class RealtimeFeeds {
 
     this.reconnectAttempts.binance = (this.reconnectAttempts.binance || 0) + 1;
     if (this.reconnectAttempts.binance > 10) {
-      console.log('[WS] Binance max reconnects reached - using CoinCap for price data');
+      console.log('[WS] Binance max reconnects reached - using Kraken/CoinCap for price data');
       this._binanceGaveUp = true;
       this._binanceActive = false;
       this.emit('binance_unavailable', {});
@@ -275,18 +286,221 @@ class RealtimeFeeds {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // COINCAP WEBSOCKET - always-on, promotes to primary when Binance is down
+  // KRAKEN PUBLIC WEBSOCKET - reliable, no API key needed
+  // ═══════════════════════════════════════════════════════════════════════
+
+  connectKraken() {
+    const url = 'wss://ws.kraken.com';
+    console.log('[WS] Connecting to Kraken...');
+
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      console.error('[WS] Kraken connection failed:', e.message);
+      this._reconnectKraken();
+      return;
+    }
+
+    if (this.connections.kraken) {
+      try { this.connections.kraken.close(); } catch (e) { /* ignore */ }
+    }
+    this.connections.kraken = ws;
+    this.reconnectAttempts.kraken = this.reconnectAttempts.kraken || 0;
+
+    ws.on('open', () => {
+      console.log('[WS] Connected to Kraken');
+      this._krakenActive = true;
+      this._krakenGaveUp = false;
+      this.reconnectAttempts.kraken = 0;
+      this.emit('connected', { source: 'kraken' });
+
+      // Subscribe to XRP/USD ticker
+      ws.send(JSON.stringify({
+        event: 'subscribe',
+        pair: ['XRP/USD'],
+        subscription: { name: 'ticker' }
+      }));
+
+      // Subscribe to XRP/USD trades
+      ws.send(JSON.stringify({
+        event: 'subscribe',
+        pair: ['XRP/USD'],
+        subscription: { name: 'trade' }
+      }));
+
+      // Heartbeat ping every 30s
+      this._heartbeats.kraken = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ event: 'ping' }));
+        }
+      }, 30000);
+    });
+
+    ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+
+        // Skip system messages
+        if (msg.event) return;
+
+        // Kraken sends arrays: [channelID, data, channelName, pair]
+        if (Array.isArray(msg) && msg.length >= 4) {
+          const channelName = msg[2];
+          const payload = msg[1];
+
+          if (channelName === 'ticker') {
+            this._handleKrakenTicker(payload);
+          } else if (channelName === 'trade') {
+            this._handleKrakenTrade(payload);
+          }
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    });
+
+    ws.on('close', () => {
+      this._krakenActive = false;
+      if (this._heartbeats.kraken) {
+        clearInterval(this._heartbeats.kraken);
+        this._heartbeats.kraken = null;
+      }
+      this.emit('disconnected', { source: 'kraken' });
+      this._reconnectKraken();
+    });
+
+    ws.on('error', (err) => {
+      console.error('[WS] Kraken error:', err.message);
+    });
+  }
+
+  _reconnectKraken() {
+    if (this._krakenGaveUp) return;
+
+    this.reconnectAttempts.kraken = (this.reconnectAttempts.kraken || 0) + 1;
+    if (this.reconnectAttempts.kraken > this.maxReconnect) {
+      console.error('[WS] Kraken max reconnect attempts reached');
+      this._krakenGaveUp = true;
+      return;
+    }
+
+    const delay = Math.min(30000, Math.pow(2, Math.min(this.reconnectAttempts.kraken, 10)) * 1000);
+    if (this.reconnectAttempts.kraken <= 3 || this.reconnectAttempts.kraken % 5 === 0) {
+      console.log(`[WS] Kraken reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts.kraken})`);
+    }
+    setTimeout(() => this.connectKraken(), delay);
+  }
+
+  _handleKrakenTicker(data) {
+    // Kraken ticker: { c: [price, lotVolume], v: [today, last24h], ... }
+    if (!data || !data.c) return;
+
+    const price = parseFloat(data.c[0]);
+    if (isNaN(price) || price <= 0) return;
+
+    // When Binance is down, Kraken becomes primary
+    if (!this._binanceActive) {
+      this.latestPrice = price;
+      this.emit('price', { price, source: 'kraken', timestamp: Date.now() });
+    }
+
+    this.emit('price_backup', { price, source: 'kraken', timestamp: Date.now() });
+  }
+
+  _handleKrakenTrade(trades) {
+    // Kraken trades: [[price, volume, time, side, orderType, misc], ...]
+    if (!Array.isArray(trades)) return;
+
+    for (const t of trades) {
+      const price = parseFloat(t[0]);
+      const volume = parseFloat(t[1]);
+      if (isNaN(price) || isNaN(volume)) continue;
+
+      // When Binance is down, Kraken becomes primary
+      if (!this._binanceActive) {
+        this.latestPrice = price;
+        this.emit('price', { price, source: 'kraken', timestamp: Date.now() });
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // COINCAP WEBSOCKET - backup price source (may be unreliable)
   // ═══════════════════════════════════════════════════════════════════════
 
   connectCoinCap() {
-    const url = 'wss://ws.coincap.io/prices?assets=xrp,bitcoin,ethereum';
-    this._connect('coincap', url, (data) => {
+    const urls = [
+      'wss://ws.coincap.io/prices?assets=xrp,bitcoin,ethereum',
+    ];
+
+    this._tryCoinCapEndpoint(urls, 0);
+  }
+
+  _tryCoinCapEndpoint(urls, index) {
+    if (index >= urls.length) {
+      console.log('[WS] CoinCap endpoints exhausted - Kraken is backup');
+      this._coincapActive = false;
+      this.emit('disconnected', { source: 'coincap' });
+      // Retry after delay
+      setTimeout(() => this._tryCoinCapEndpoint(urls, 0), 30000);
+      return;
+    }
+
+    const url = urls[index];
+    console.log(`[WS] Connecting to CoinCap...`);
+
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      console.error('[WS] CoinCap connection failed:', e.message);
+      this._tryCoinCapEndpoint(urls, index + 1);
+      return;
+    }
+
+    if (this.connections.coincap) {
+      try { this.connections.coincap.close(); } catch (e) { /* ignore */ }
+    }
+    this.connections.coincap = ws;
+
+    // Connection timeout - if not open within 10s, try next
+    const connectTimeout = setTimeout(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        console.log('[WS] CoinCap connection timeout');
+        try { ws.close(); } catch (e) { /* ignore */ }
+        this._tryCoinCapEndpoint(urls, index + 1);
+      }
+    }, 10000);
+
+    // Stale data detection - if no message within 60s, reconnect
+    let lastMessage = Date.now();
+    let staleCheck = null;
+
+    ws.on('open', () => {
+      clearTimeout(connectTimeout);
+      console.log('[WS] Connected to CoinCap');
+      this._coincapActive = true;
+      this.reconnectAttempts.coincap = 0;
+      this.emit('connected', { source: 'coincap' });
+
+      lastMessage = Date.now();
+      staleCheck = setInterval(() => {
+        if (Date.now() - lastMessage > 60000) {
+          console.log('[WS] CoinCap stale connection detected, reconnecting...');
+          try { ws.close(); } catch (e) { /* ignore */ }
+        }
+      }, 15000);
+    });
+
+    ws.on('message', (data) => {
+      lastMessage = Date.now();
       try {
-        const prices = JSON.parse(data);
+        const prices = JSON.parse(data.toString());
         if (prices.xrp) {
           const price = parseFloat(prices.xrp);
-          // When Binance is down, CoinCap becomes the primary price source
-          if (!this._binanceActive) {
+          // When Binance & Kraken are down, CoinCap becomes primary
+          if (!this._binanceActive && !this._krakenActive) {
             this.latestPrice = price;
             this.emit('price', { price, source: 'coincap', timestamp: Date.now() });
           }
@@ -297,6 +511,18 @@ class RealtimeFeeds {
       } catch (e) {
         // Ignore
       }
+    });
+
+    ws.on('close', () => {
+      clearTimeout(connectTimeout);
+      if (staleCheck) clearInterval(staleCheck);
+      this._coincapActive = false;
+      this.emit('disconnected', { source: 'coincap' });
+      this._reconnect('coincap', urls[0], null, null);
+    });
+
+    ws.on('error', (err) => {
+      console.error('[WS] CoinCap error:', err.message);
     });
   }
 
@@ -387,7 +613,7 @@ class RealtimeFeeds {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // GENERIC CONNECTION MANAGER (for CoinCap + XRPL)
+  // GENERIC CONNECTION MANAGER (for XRPL and fallback CoinCap reconnects)
   // ═══════════════════════════════════════════════════════════════════════
 
   _connect(name, url, onMessage, onOpen = null) {
@@ -440,11 +666,18 @@ class RealtimeFeeds {
     if (this.reconnectAttempts[name] <= 3 || this.reconnectAttempts[name] % 5 === 0) {
       console.log(`[WS] ${name} reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts[name]})`);
     }
-    setTimeout(() => this._connect(name, url, onMessage, onOpen), delay);
+
+    if (name === 'coincap') {
+      // CoinCap uses its own connection logic
+      setTimeout(() => this.connectCoinCap(), delay);
+    } else if (onMessage) {
+      setTimeout(() => this._connect(name, url, onMessage, onOpen), delay);
+    }
   }
 
   startAll() {
     this.connectBinance();
+    this.connectKraken();
     this.connectCoinCap();
     this.connectXRPL();
   }
@@ -452,6 +685,10 @@ class RealtimeFeeds {
   stopAll() {
     this.maxReconnect = 0;
     this._binanceGaveUp = true;
+    this._krakenGaveUp = true;
+    for (const key of Object.keys(this._heartbeats)) {
+      if (this._heartbeats[key]) clearInterval(this._heartbeats[key]);
+    }
     for (const [name, ws] of Object.entries(this.connections)) {
       try { ws.close(); } catch (e) { /* ignore */ }
     }
@@ -459,6 +696,10 @@ class RealtimeFeeds {
 
   isBinanceActive() {
     return this._binanceActive;
+  }
+
+  isKrakenActive() {
+    return this._krakenActive;
   }
 
   getSnapshot() {

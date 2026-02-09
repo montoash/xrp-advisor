@@ -32,7 +32,7 @@ app.use((req, res, next) => {
     "default-src 'self'",
     "script-src 'unsafe-inline'",
     "style-src 'unsafe-inline'",
-    "connect-src 'self' ws://localhost:* ws://127.0.0.1:*",
+    "connect-src 'self' ws://localhost:* ws://127.0.0.1:* wss://localhost:* wss://127.0.0.1:*",
     "img-src 'self' data:",
     "font-src 'self'",
     "object-src 'none'",
@@ -80,6 +80,7 @@ const signalEngine = new SignalEngine();
 const realtime = new RealtimeFeeds();
 
 // ─── State ────────────────────────────────────────────────────────────
+let currentLeverage = 1.68;
 const state = {
   // Price
   price: null,
@@ -213,6 +214,10 @@ realtime.on('connected', (data) => {
 });
 realtime.on('disconnected', (data) => {
   state.connections[data.source] = 'disconnected';
+  broadcast('connection', state.connections);
+});
+realtime.on('binance_unavailable', () => {
+  state.connections.binance = 'unavailable';
   broadcast('connection', state.connections);
 });
 
@@ -351,12 +356,13 @@ async function refreshData() {
       onChain: state.xrpl ? { ...state.xrpl, whaleAlerts: state.whaleAlerts.slice(-10) } : null,
       orderFlow: state.orderFlow,
       fearGreed: state.fearGreed,
-      leverage: 1.68
+      leverage: currentLeverage
     });
 
     state.lastUpdated = new Date().toISOString();
     state.dataSourceStatus = {
       binance: state.connections.binance || 'pending',
+      kraken: state.connections.kraken || 'pending',
       coincap: state.connections.coincap || 'pending',
       xrpl: state.connections.xrpl || 'pending',
       coingecko: data.coinGeckoPrice ? 'ok' : 'error',
@@ -410,14 +416,27 @@ function refreshSignal() {
     onChain: state.xrpl ? { ...state.xrpl, whaleAlerts: state.whaleAlerts.slice(-10) } : null,
     orderFlow: state.orderFlow,
     fearGreed: state.fearGreed,
-    leverage: 1.68
+    leverage: currentLeverage
   });
   broadcast('signal', state.signal);
 }
 
 // ─── WebSocket Client Connections ─────────────────────────────────────
+
 wss.on('connection', (ws) => {
   console.log('Dashboard client connected');
+
+  // Handle client messages (e.g. leverage changes)
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'set_leverage' && msg.leverage) {
+        currentLeverage = Math.max(1, Math.min(10, parseFloat(msg.leverage)));
+        // Re-generate signal with new leverage
+        refreshSignal();
+      }
+    } catch (e) { /* ignore */ }
+  });
 
   // Send full state on connect
   ws.send(JSON.stringify({
@@ -463,7 +482,7 @@ server.listen(PORT, '127.0.0.1', () => {
 ║  Dashboard:   http://localhost:${PORT}                     ║
 ║  API:         http://localhost:${PORT}/api/dashboard        ║
 ║                                                          ║
-║  Real-Time:   Binance WS + CoinCap WS + XRPL WS        ║
+║  Real-Time:   Binance + Kraken + CoinCap + XRPL WS      ║
 ║  Data:        CoinGecko, Reddit, 18 RSS, CoinPaprika    ║
 ║  Sentiment:   VADER-style NLP + Galaxy Score             ║
 ║  Technicals:  20+ indicators, multi-timeframe            ║
