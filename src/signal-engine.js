@@ -1,240 +1,220 @@
 /**
- * XRP Perpetual Trade Signal Engine
- * Generates LONG/SHORT/NEUTRAL signals for perpetual futures
- * with configurable leverage (default 1.68x)
+ * Advanced Multi-Factor Signal Engine
+ * Generates LONG/SHORT/NEUTRAL signals for 1.68x leverage perpetuals
+ *
+ * 7 Factor Model:
+ *   1. Social Sentiment (VADER-style) - 15%
+ *   2. Technical Analysis (20+ indicators) - 25%
+ *   3. Market Momentum (price action) - 15%
+ *   4. News Sentiment - 10%
+ *   5. On-Chain Activity (XRPL) - 10%
+ *   6. Order Flow (buy/sell pressure) - 15%
+ *   7. Market Regime & Correlation - 10%
  */
 
 class SignalEngine {
   constructor() {
     this.signalHistory = [];
-    this.maxHistory = 500;
+    this.maxHistory = 1000;
   }
 
-  generateSignal({ price, market, sentiment, technicals, leverage = 1.68 }) {
+  generateSignal({ sentiment, technicals, market, price, news, onChain, orderFlow, fearGreed, leverage = 1.68 }) {
     const factors = [];
     let totalScore = 0;
     let totalWeight = 0;
 
-    // ─── 1. Social Sentiment Score (weight: 25%) ─────────────────────
+    // ─── 1. Social Sentiment (15%) ───────────────────────────────────
     if (sentiment) {
-      const sentWeight = 25;
-      let sentScore = 0;
+      const w = 15;
+      let s = 0;
+      // Galaxy Score contribution
+      if (sentiment.galaxyScore != null) s += (sentiment.galaxyScore - 50) * 0.8;
+      // Compound sentiment
+      if (sentiment.compound != null) s += sentiment.compound * 40;
+      // Social velocity (rapid increase in chatter = amplifier)
+      if (sentiment.socialVelocity > 50) s *= 1.3;
+      else if (sentiment.socialVelocity < -30) s *= 0.7;
 
-      // Reddit community sentiment
-      if (sentiment.score !== undefined) {
-        sentScore = Math.max(-100, Math.min(100, sentiment.score));
-      }
-
-      // Fear & Greed Index
-      if (sentiment.fearGreed && sentiment.fearGreed.length > 0) {
-        const fg = sentiment.fearGreed[0].value;
-        // Contrarian: extreme fear = bullish, extreme greed = bearish
-        const fgSignal = fg < 25 ? 30 : fg < 40 ? 15 : fg > 75 ? -30 : fg > 60 ? -15 : 0;
-        sentScore = (sentScore + fgSignal) / 2;
-      }
-
-      // CoinGecko community sentiment
-      if (market?.sentimentUp) {
-        const cgSent = (market.sentimentUp - 50) * 2; // normalize to -100 to +100
-        sentScore = (sentScore * 2 + cgSent) / 3;
-      }
-
-      factors.push({
-        name: 'Social Sentiment',
-        score: sentScore,
-        weight: sentWeight,
-        detail: sentiment.label || 'Unknown'
-      });
-      totalScore += sentScore * sentWeight;
-      totalWeight += sentWeight;
+      s = clamp(s, -100, 100);
+      factors.push({ name: 'Social Sentiment', score: s, weight: w,
+        detail: `Galaxy: ${sentiment.galaxyScore || '--'} | ${sentiment.label || 'N/A'} | Vol: ${sentiment.socialVolume || 0} posts`,
+        icon: 'chat' });
+      totalScore += s * w;
+      totalWeight += w;
     }
 
-    // ─── 2. Technical Indicators (weight: 35%) ───────────────────────
+    // ─── 2. Technical Analysis (25%) ─────────────────────────────────
     if (technicals) {
-      const techWeight = 35;
-      let techScore = 0;
-      let techFactors = 0;
-
-      // RSI
-      if (technicals.rsi !== null) {
-        let rsiSignal = 0;
-        if (technicals.rsi < 30) rsiSignal = 60;       // Oversold = bullish
-        else if (technicals.rsi < 40) rsiSignal = 30;
-        else if (technicals.rsi > 70) rsiSignal = -60;  // Overbought = bearish
-        else if (technicals.rsi > 60) rsiSignal = -30;
-        else rsiSignal = 0;
-        techScore += rsiSignal;
-        techFactors++;
-      }
-
-      // MACD
-      if (technicals.macd !== null) {
-        const macdSignal = technicals.macd > 0 ? 40 : technicals.macd < 0 ? -40 : 0;
-        techScore += macdSignal;
-        techFactors++;
-      }
-
-      // Price vs SMA20 (trend)
-      if (technicals.priceVsSMA20 !== null) {
-        const trendSignal = Math.max(-50, Math.min(50, technicals.priceVsSMA20 * 10));
-        techScore += trendSignal;
-        techFactors++;
-      }
-
-      // Bollinger Band position
-      if (technicals.bollingerUpper && technicals.bollingerLower) {
-        const bbRange = technicals.bollingerUpper - technicals.bollingerLower;
-        if (bbRange > 0) {
-          const bbPos = (technicals.price - technicals.bollingerLower) / bbRange;
-          let bbSignal = 0;
-          if (bbPos < 0.1) bbSignal = 50;        // Near lower band = buy
-          else if (bbPos < 0.3) bbSignal = 25;
-          else if (bbPos > 0.9) bbSignal = -50;   // Near upper band = sell
-          else if (bbPos > 0.7) bbSignal = -25;
-          techScore += bbSignal;
-          techFactors++;
-        }
-      }
-
-      // Momentum
-      if (technicals.momentum !== null) {
-        const momSignal = Math.max(-40, Math.min(40, technicals.momentum * 5));
-        techScore += momSignal;
-        techFactors++;
-      }
-
-      if (techFactors > 0) {
-        techScore = techScore / techFactors;
-      }
-
-      factors.push({
-        name: 'Technical Analysis',
-        score: techScore,
-        weight: techWeight,
-        detail: `RSI: ${technicals.rsi?.toFixed(1) || 'N/A'}, MACD: ${technicals.macd?.toFixed(6) || 'N/A'}`
-      });
-      totalScore += techScore * techWeight;
-      totalWeight += techWeight;
+      const w = 25;
+      let s = technicals.score || 0; // Already -100 to +100 from TA engine
+      factors.push({ name: 'Technical Analysis', score: s, weight: w,
+        detail: `${technicals.recommendation || 'N/A'} | Buy: ${technicals.buySignals || 0} Sell: ${technicals.sellSignals || 0} | RSI: ${technicals.indicators?.rsi?.value?.toFixed(1) || 'N/A'}`,
+        icon: 'chart' });
+      totalScore += s * w;
+      totalWeight += w;
     }
 
-    // ─── 3. Market Data / Price Action (weight: 25%) ─────────────────
-    if (price || market) {
-      const mktWeight = 25;
-      let mktScore = 0;
-      let mktFactors = 0;
+    // ─── 3. Market Momentum (15%) ────────────────────────────────────
+    if (market) {
+      const w = 15;
+      let s = 0;
+      let parts = [];
 
-      // 24h change
-      if (price?.change24h) {
-        const change = Math.max(-50, Math.min(50, price.change24h * 5));
-        mktScore += change;
-        mktFactors++;
+      if (market.priceChange7d != null) {
+        s += clamp(market.priceChange7d * 3, -40, 40);
+        parts.push(`7d: ${market.priceChange7d?.toFixed(1)}%`);
+      }
+      if (market.priceChange30d != null) {
+        s += clamp(market.priceChange30d * 1.5, -30, 30);
+        parts.push(`30d: ${market.priceChange30d?.toFixed(1)}%`);
+      }
+      if (price?.change24h != null) {
+        s += clamp(price.change24h * 5, -30, 30);
+        parts.push(`24h: ${price.change24h?.toFixed(2)}%`);
       }
 
-      // 7d change momentum
-      if (market?.priceChange7d) {
-        const weekChange = Math.max(-40, Math.min(40, market.priceChange7d * 3));
-        mktScore += weekChange;
-        mktFactors++;
-      }
-
-      // 30d trend
-      if (market?.priceChange30d) {
-        const monthChange = Math.max(-30, Math.min(30, market.priceChange30d * 2));
-        mktScore += monthChange;
-        mktFactors++;
-      }
-
-      // Volume analysis (high volume confirms trend)
-      if (price?.volume24h && price.volume24h > 0) {
-        // We don't have historical volume so just note it
-        mktFactors++;
-      }
-
-      if (mktFactors > 0) {
-        mktScore = mktScore / mktFactors;
-      }
-
-      factors.push({
-        name: 'Market Momentum',
-        score: mktScore,
-        weight: mktWeight,
-        detail: `24h: ${price?.change24h?.toFixed(2) || 'N/A'}%, 7d: ${market?.priceChange7d?.toFixed(2) || 'N/A'}%`
-      });
-      totalScore += mktScore * mktWeight;
-      totalWeight += mktWeight;
+      s = clamp(s, -100, 100);
+      factors.push({ name: 'Market Momentum', score: s, weight: w,
+        detail: parts.join(' | ') || 'N/A', icon: 'trending' });
+      totalScore += s * w;
+      totalWeight += w;
     }
 
-    // ─── 4. News Sentiment / Social Volume (weight: 15%) ─────────────
-    if (sentiment) {
-      const newsWeight = 15;
+    // ─── 4. News Sentiment (10%) ─────────────────────────────────────
+    if (news && news.length > 0) {
+      const w = 10;
+      // Use sentiment engine scores from news articles
       let newsScore = 0;
-
-      // Bullish/bearish ratio from posts
-      if (sentiment.total > 0) {
-        const bullBearRatio = (sentiment.bullishPercent - sentiment.bearishPercent);
-        newsScore = Math.max(-60, Math.min(60, bullBearRatio * 1.5));
+      for (const article of news.slice(0, 20)) {
+        if (article.sentimentScore) newsScore += article.sentimentScore;
       }
-
-      // Social volume factor
-      if (sentiment.cryptoCompare) {
-        const postsPerDay = sentiment.cryptoCompare.redditPostsPerDay || 0;
-        // High social volume amplifies the direction
-        if (postsPerDay > 100 && newsScore > 0) newsScore *= 1.2;
-        if (postsPerDay > 100 && newsScore < 0) newsScore *= 1.2;
-      }
-
-      factors.push({
-        name: 'News & Social Volume',
-        score: newsScore,
-        weight: newsWeight,
-        detail: `Posts: ${sentiment.total}, Bull: ${sentiment.bullishPercent}%, Bear: ${sentiment.bearishPercent}%`
-      });
-      totalScore += newsScore * newsWeight;
-      totalWeight += newsWeight;
+      let s = clamp(newsScore * 5, -100, 100);
+      factors.push({ name: 'News Flow', score: s, weight: w,
+        detail: `${news.length} articles | Score: ${s > 0 ? '+' : ''}${s.toFixed(0)}`,
+        icon: 'news' });
+      totalScore += s * w;
+      totalWeight += w;
     }
 
-    // ─── Calculate Final Signal ──────────────────────────────────────
+    // ─── 5. On-Chain Activity (10%) ──────────────────────────────────
+    if (onChain) {
+      const w = 10;
+      let s = 0;
+      // Higher tx count = more activity = bullish
+      if (onChain.txCount > 10) s += 15;
+      if (onChain.paymentCount > 5) s += 10;
+      // Whale alerts
+      if (onChain.whaleAlerts?.length > 0) {
+        // Large whale movements can go either way, but generally create volatility
+        s += onChain.whaleAlerts.length * 5;
+      }
+      // Escrow activity (Ripple releases)
+      if (onChain.escrowCount > 0) s -= 5;
+
+      s = clamp(s, -100, 100);
+      factors.push({ name: 'On-Chain (XRPL)', score: s, weight: w,
+        detail: `Ledger: ${onChain.ledgerIndex || 'N/A'} | Tx: ${onChain.txCount || 0} | Payments: ${onChain.paymentCount || 0}`,
+        icon: 'link' });
+      totalScore += s * w;
+      totalWeight += w;
+    }
+
+    // ─── 6. Order Flow (15%) ─────────────────────────────────────────
+    if (orderFlow) {
+      const w = 15;
+      let s = 0;
+
+      // Buy/Sell pressure from Binance order book & trades
+      if (orderFlow.buyPressure != null) {
+        s += (orderFlow.buyPressure - 50) * 2; // 0-100 centered at 50
+      }
+      // Order book imbalance
+      if (orderFlow.imbalance != null) {
+        s += clamp(orderFlow.imbalance * 1.5, -30, 30);
+      }
+      // Volume ratio (buy/sell)
+      if (orderFlow.volumeRatio && orderFlow.volumeRatio !== 'inf') {
+        const ratio = parseFloat(orderFlow.volumeRatio);
+        s += clamp((ratio - 1) * 30, -30, 30);
+      }
+
+      s = clamp(s, -100, 100);
+      factors.push({ name: 'Order Flow', score: s, weight: w,
+        detail: `Buy: ${orderFlow.buyPressure || 50}% | OB Imbalance: ${orderFlow.imbalance?.toFixed(1) || 0}% | Vol Ratio: ${orderFlow.volumeRatio || '--'}`,
+        icon: 'flow' });
+      totalScore += s * w;
+      totalWeight += w;
+    }
+
+    // ─── 7. Market Regime & Macro (10%) ──────────────────────────────
+    {
+      const w = 10;
+      let s = 0;
+
+      // Fear & Greed (contrarian)
+      if (fearGreed && fearGreed.length > 0) {
+        const fg = fearGreed[0].value;
+        if (fg < 20) s += 30;       // Extreme fear = contrarian buy
+        else if (fg < 35) s += 15;
+        else if (fg > 80) s -= 30;   // Extreme greed = contrarian sell
+        else if (fg > 65) s -= 15;
+      }
+
+      // Market regime from technicals
+      if (technicals?.indicators?.marketRegime) {
+        const regime = technicals.indicators.marketRegime;
+        if (regime.regime === 'trending_up') s += 20;
+        else if (regime.regime === 'trending_down') s -= 20;
+        else if (regime.regime === 'consolidating') s += 5; // Breakout potential
+      }
+
+      // CoinGecko sentiment
+      if (market?.sentimentUp) {
+        s += (market.sentimentUp - 50) * 0.5;
+      }
+
+      s = clamp(s, -100, 100);
+      factors.push({ name: 'Market Regime', score: s, weight: w,
+        detail: `F&G: ${fearGreed?.[0]?.value || '--'} (${fearGreed?.[0]?.label || '--'}) | Regime: ${technicals?.indicators?.marketRegime?.regime || 'unknown'}`,
+        icon: 'globe' });
+      totalScore += s * w;
+      totalWeight += w;
+    }
+
+    // ─── Final Signal Calculation ────────────────────────────────────
     const rawScore = totalWeight > 0 ? totalScore / totalWeight : 0;
-    const normalizedScore = Math.max(-100, Math.min(100, rawScore));
+    const score = clamp(rawScore, -100, 100);
+    const confidence = Math.min(100, Math.round(Math.abs(score)));
 
-    // Confidence = how strong the signal is (0-100)
-    const confidence = Math.min(100, Math.round(Math.abs(normalizedScore)));
+    // Leverage-adjusted thresholds (higher leverage = higher bar for entry)
+    const leverageFactor = 1 + (leverage - 1) * 0.5;
+    const strongThreshold = 40 * leverageFactor;
+    const entryThreshold = 18 * leverageFactor;
 
-    // Signal thresholds (adjusted for leverage risk)
-    // Higher leverage = need stronger conviction
-    const leverageRiskFactor = 1 + (leverage - 1) * 0.5;
-    const longThreshold = 15 * leverageRiskFactor;
-    const shortThreshold = -15 * leverageRiskFactor;
-    const strongThreshold = 35 * leverageRiskFactor;
-
-    let signal = 'NEUTRAL';
-    let action = 'HOLD - Wait for clearer signal';
-
-    if (normalizedScore > strongThreshold) {
-      signal = 'STRONG LONG';
-      action = `LONG XRP Perp @ ${leverage}x leverage - Strong bullish convergence`;
-    } else if (normalizedScore > longThreshold) {
-      signal = 'LONG';
-      action = `LONG XRP Perp @ ${leverage}x leverage - Bullish bias`;
-    } else if (normalizedScore < -strongThreshold) {
-      signal = 'STRONG SHORT';
-      action = `SHORT XRP Perp @ ${leverage}x leverage - Strong bearish convergence`;
-    } else if (normalizedScore < shortThreshold) {
-      signal = 'SHORT';
-      action = `SHORT XRP Perp @ ${leverage}x leverage - Bearish bias`;
+    let signal, action, emoji;
+    if (score > strongThreshold) {
+      signal = 'STRONG LONG'; action = `Open LONG @ ${leverage}x - Strong bullish convergence across factors`; emoji = 'rocket';
+    } else if (score > entryThreshold) {
+      signal = 'LONG'; action = `Open LONG @ ${leverage}x - Bullish bias with moderate confidence`; emoji = 'up';
+    } else if (score < -strongThreshold) {
+      signal = 'STRONG SHORT'; action = `Open SHORT @ ${leverage}x - Strong bearish convergence across factors`; emoji = 'skull';
+    } else if (score < -entryThreshold) {
+      signal = 'SHORT'; action = `Open SHORT @ ${leverage}x - Bearish bias with moderate confidence`; emoji = 'down';
+    } else {
+      signal = 'NEUTRAL'; action = `HOLD / No position - Wait for clearer signal alignment`; emoji = 'pause';
     }
 
-    // Risk management for leveraged position
-    const riskMetrics = this.calculateRisk(normalizedScore, leverage, price);
+    // Risk management
+    const risk = this._calcRisk(score, leverage, price?.price);
 
     const result = {
-      signal,
-      action,
-      score: Math.round(normalizedScore * 10) / 10,
+      signal, action, emoji,
+      score: Math.round(score * 10) / 10,
       confidence,
       leverage,
       factors,
-      risk: riskMetrics,
+      risk,
+      factorCount: factors.length,
       timestamp: new Date().toISOString()
     };
 
@@ -246,73 +226,62 @@ class SignalEngine {
     return result;
   }
 
-  calculateRisk(score, leverage, price) {
-    const currentPrice = price?.price || 0;
-
-    // Position sizing recommendation (% of portfolio)
-    let positionSize;
+  _calcRisk(score, leverage, currentPrice) {
+    if (!currentPrice) return null;
+    const isLong = score > 0;
     const absScore = Math.abs(score);
-    if (absScore > 50) positionSize = 15;
-    else if (absScore > 30) positionSize = 10;
-    else if (absScore > 15) positionSize = 5;
-    else positionSize = 0;
 
-    // Effective exposure
-    const effectiveExposure = positionSize * leverage;
+    // Position sizing
+    let positionPct;
+    if (absScore > 60) positionPct = 20;
+    else if (absScore > 40) positionPct = 15;
+    else if (absScore > 20) positionPct = 10;
+    else positionPct = 0;
 
-    // Stop loss (tighter for leveraged positions)
-    const baseSL = 3; // 3% base
-    const stopLossPercent = baseSL / leverage;
-    const stopLossPrice = score > 0
-      ? currentPrice * (1 - stopLossPercent / 100)
-      : currentPrice * (1 + stopLossPercent / 100);
+    const effectiveExposure = positionPct * leverage;
 
-    // Take profit
-    const baseTP = 5; // 5% base
-    const takeProfitPercent = baseTP / leverage;
-    const takeProfitPrice = score > 0
-      ? currentPrice * (1 + takeProfitPercent / 100)
-      : currentPrice * (1 - takeProfitPercent / 100);
+    // Stop loss / Take profit (tighter for leverage)
+    const stopPct = 3.5 / leverage;
+    const tpPct = 6 / leverage;
 
-    // Liquidation price approximation
-    const liquidationPercent = 100 / leverage;
-    const liquidationPrice = score > 0
-      ? currentPrice * (1 - liquidationPercent / 100)
-      : currentPrice * (1 + liquidationPercent / 100);
+    const stopPrice = isLong
+      ? currentPrice * (1 - stopPct / 100)
+      : currentPrice * (1 + stopPct / 100);
+    const tpPrice = isLong
+      ? currentPrice * (1 + tpPct / 100)
+      : currentPrice * (1 - tpPct / 100);
 
-    // Risk/Reward ratio
-    const riskReward = stopLossPercent > 0 ? (takeProfitPercent / stopLossPercent).toFixed(2) : 'N/A';
+    // Liquidation
+    const liqPct = (1 / leverage) * 100 * 0.9; // 90% of margin
+    const liqPrice = isLong
+      ? currentPrice * (1 - liqPct / 100)
+      : currentPrice * (1 + liqPct / 100);
 
-    // Overall risk level
-    let riskLevel = 'LOW';
+    const riskReward = (tpPct / stopPct).toFixed(2);
+
+    let riskLevel;
     if (leverage > 5) riskLevel = 'EXTREME';
     else if (leverage > 3) riskLevel = 'HIGH';
     else if (leverage > 2) riskLevel = 'MODERATE';
-    else if (leverage > 1) riskLevel = 'LOW-MODERATE';
+    else riskLevel = 'LOW-MODERATE';
 
     return {
-      positionSize: `${positionSize}% of portfolio`,
+      positionSize: `${positionPct}%`,
       effectiveExposure: `${effectiveExposure.toFixed(1)}%`,
-      leverage: `${leverage}x`,
-      stopLoss: {
-        percent: `${stopLossPercent.toFixed(2)}%`,
-        price: stopLossPrice ? `$${stopLossPrice.toFixed(4)}` : 'N/A'
-      },
-      takeProfit: {
-        percent: `${takeProfitPercent.toFixed(2)}%`,
-        price: takeProfitPrice ? `$${takeProfitPrice.toFixed(4)}` : 'N/A'
-      },
-      liquidationPrice: liquidationPrice ? `$${liquidationPrice.toFixed(4)}` : 'N/A',
+      stopLoss: { pct: `${stopPct.toFixed(2)}%`, price: `$${stopPrice.toFixed(4)}` },
+      takeProfit: { pct: `${tpPct.toFixed(2)}%`, price: `$${tpPrice.toFixed(4)}` },
+      liquidation: `$${liqPrice.toFixed(4)}`,
       riskReward,
       riskLevel,
-      maxLoss: `${(stopLossPercent * leverage).toFixed(2)}% of position`,
-      maxGain: `${(takeProfitPercent * leverage).toFixed(2)}% of position`
+      maxLoss: `${(stopPct * leverage).toFixed(2)}%`,
+      maxGain: `${(tpPct * leverage).toFixed(2)}%`,
+      direction: isLong ? 'LONG' : 'SHORT'
     };
   }
 
-  getHistory() {
-    return this.signalHistory;
-  }
+  getHistory() { return this.signalHistory; }
 }
+
+function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
 
 module.exports = SignalEngine;
