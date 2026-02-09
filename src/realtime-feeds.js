@@ -4,8 +4,8 @@
  * No API keys required - uses public endpoints
  *
  * Sources:
- *   - Binance WebSocket (XRP/USDT trades + order book)
- *   - CoinCap WebSocket (real-time prices)
+ *   - Binance WebSocket (XRP/USDT trades + order book) - with .US fallback
+ *   - CoinCap WebSocket (real-time prices - always-on, promotes to primary)
  *   - XRPL WebSocket (on-chain data)
  */
 
@@ -23,6 +23,15 @@ class RealtimeFeeds {
     this.ticker24h = null;
     this.reconnectAttempts = {};
     this.maxReconnect = 50;
+
+    // Binance fallback state
+    this._binanceEndpoints = [
+      { url: 'wss://stream.binance.com:9443/stream?streams=xrpusdt@trade/xrpusdt@ticker/xrpusdt@depth5@100ms', label: 'Binance.com' },
+      { url: 'wss://stream.binance.us:9443/stream?streams=xrpusd@trade/xrpusd@ticker/xrpusd@depth5@100ms', label: 'Binance.US' },
+    ];
+    this._binanceEndpointIndex = 0;
+    this._binanceActive = false;
+    this._binanceGaveUp = false;
 
     // Aggregated metrics
     this.metrics = {
@@ -66,28 +75,107 @@ class RealtimeFeeds {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // BINANCE PUBLIC WEBSOCKET (real-time XRP/USDT)
+  // BINANCE PUBLIC WEBSOCKET - with automatic .US fallback
   // ═══════════════════════════════════════════════════════════════════════
 
   connectBinance() {
-    const url = 'wss://stream.binance.com:9443/stream?streams=xrpusdt@trade/xrpusdt@ticker/xrpusdt@depth5@100ms';
-    this._connect('binance', url, (data) => {
+    this._binanceEndpointIndex = 0;
+    this._binanceGaveUp = false;
+    this._tryBinanceEndpoint();
+  }
+
+  _tryBinanceEndpoint() {
+    if (this._binanceEndpointIndex >= this._binanceEndpoints.length) {
+      console.log('[WS] All Binance endpoints unavailable in your region');
+      console.log('[WS] Using CoinCap as primary price feed (real-time via WebSocket)');
+      this._binanceGaveUp = true;
+      this._binanceActive = false;
+      this.emit('binance_unavailable', {});
+      return;
+    }
+
+    const endpoint = this._binanceEndpoints[this._binanceEndpointIndex];
+    console.log(`[WS] Trying ${endpoint.label}...`);
+
+    let ws;
+    try {
+      ws = new WebSocket(endpoint.url);
+    } catch (e) {
+      console.error(`[WS] ${endpoint.label} connection failed:`, e.message);
+      this._binanceEndpointIndex++;
+      setTimeout(() => this._tryBinanceEndpoint(), 1000);
+      return;
+    }
+
+    this.connections.binance = ws;
+    let switchedEndpoint = false;
+
+    ws.on('open', () => {
+      console.log(`[WS] Connected to ${endpoint.label}`);
+      this._binanceActive = true;
+      this._binanceGaveUp = false;
+      this.reconnectAttempts.binance = 0;
+      this.emit('connected', { source: 'binance' });
+    });
+
+    ws.on('message', (data) => {
       try {
         const parsed = JSON.parse(data);
         const stream = parsed.stream;
         const payload = parsed.data;
 
-        if (stream === 'xrpusdt@trade') {
+        if (stream && stream.includes('@trade')) {
           this._handleBinanceTrade(payload);
-        } else if (stream === 'xrpusdt@ticker') {
+        } else if (stream && stream.includes('@ticker')) {
           this._handleBinanceTicker(payload);
-        } else if (stream.includes('depth')) {
+        } else if (stream && stream.includes('depth')) {
           this._handleBinanceDepth(payload);
         }
       } catch (e) {
         // Ignore parse errors
       }
     });
+
+    ws.on('error', (err) => {
+      const msg = err.message || '';
+      // HTTP 451 = region blocked, HTTP 403 = forbidden
+      if (msg.includes('451') || msg.includes('403') || msg.includes('ENOTFOUND')) {
+        console.log(`[WS] ${endpoint.label} blocked (${msg.split(':').pop().trim()})`);
+        switchedEndpoint = true;
+        this._binanceActive = false;
+        this._binanceEndpointIndex++;
+        // Don't let the close handler reconnect to the same endpoint
+        try { ws.removeAllListeners('close'); } catch (e) {}
+        setTimeout(() => this._tryBinanceEndpoint(), 1000);
+      } else {
+        console.error(`[WS] ${endpoint.label} error:`, msg);
+      }
+    });
+
+    ws.on('close', () => {
+      if (switchedEndpoint) return; // Already switching endpoints
+      if (this.connections.binance !== ws) return; // Stale connection
+      this._binanceActive = false;
+      this.emit('disconnected', { source: 'binance' });
+      this._reconnectBinance();
+    });
+  }
+
+  _reconnectBinance() {
+    if (this._binanceGaveUp) return;
+
+    this.reconnectAttempts.binance = (this.reconnectAttempts.binance || 0) + 1;
+    if (this.reconnectAttempts.binance > 10) {
+      console.log('[WS] Binance max reconnects reached - using CoinCap for price data');
+      this._binanceGaveUp = true;
+      this._binanceActive = false;
+      this.emit('binance_unavailable', {});
+      return;
+    }
+
+    const delay = Math.min(30000, Math.pow(2, Math.min(this.reconnectAttempts.binance, 10)) * 1000);
+    console.log(`[WS] Binance reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts.binance})`);
+    setTimeout(() => this._tryBinanceEndpoint(), delay);
   }
 
   _handleBinanceTrade(data) {
@@ -95,7 +183,7 @@ class RealtimeFeeds {
       price: parseFloat(data.p),
       quantity: parseFloat(data.q),
       value: parseFloat(data.p) * parseFloat(data.q),
-      side: data.m ? 'sell' : 'buy', // m = is market maker (buyer is maker = sell)
+      side: data.m ? 'sell' : 'buy',
       timestamp: data.T,
       source: 'binance'
     };
@@ -144,7 +232,6 @@ class RealtimeFeeds {
       source: 'binance'
     };
 
-    // Calculate order book imbalance
     const totalBids = this.orderBook.bids.reduce((s, b) => s + b.quantity, 0);
     const totalAsks = this.orderBook.asks.reduce((s, a) => s + a.quantity, 0);
     this.orderBook.imbalance = totalBids + totalAsks > 0
@@ -188,7 +275,7 @@ class RealtimeFeeds {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // COINCAP WEBSOCKET (backup price feed)
+  // COINCAP WEBSOCKET - always-on, promotes to primary when Binance is down
   // ═══════════════════════════════════════════════════════════════════════
 
   connectCoinCap() {
@@ -198,10 +285,13 @@ class RealtimeFeeds {
         const prices = JSON.parse(data);
         if (prices.xrp) {
           const price = parseFloat(prices.xrp);
-          if (!this.latestPrice) this.latestPrice = price;
+          // When Binance is down, CoinCap becomes the primary price source
+          if (!this._binanceActive) {
+            this.latestPrice = price;
+            this.emit('price', { price, source: 'coincap', timestamp: Date.now() });
+          }
           this.emit('price_backup', { price, source: 'coincap', timestamp: Date.now() });
         }
-        // BTC/ETH for correlation
         if (prices.bitcoin) this.emit('btc_price', parseFloat(prices.bitcoin));
         if (prices.ethereum) this.emit('eth_price', parseFloat(prices.ethereum));
       } catch (e) {
@@ -228,7 +318,6 @@ class RealtimeFeeds {
         // Ignore
       }
     }, () => {
-      // On connect, subscribe to ledger and transactions
       const ws = this.connections.xrpl;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -261,11 +350,10 @@ class RealtimeFeeds {
     switch (tx.TransactionType) {
       case 'Payment':
         this.xrplMetrics.paymentCount++;
-        // Check for large XRP payments (whale alert)
         if (tx.Amount && typeof tx.Amount === 'string') {
           const drops = parseInt(tx.Amount);
           const xrp = drops / 1000000;
-          if (xrp > 1000000) { // 1M+ XRP
+          if (xrp > 1000000) {
             this.emit('whale_alert', {
               type: 'payment',
               amount: xrp,
@@ -293,14 +381,13 @@ class RealtimeFeeds {
         break;
     }
 
-    // Track fee burns
     if (data.meta?.TransactionResult === 'tesSUCCESS' && tx.Fee) {
       this.xrplMetrics.feeBurned += parseInt(tx.Fee) / 1000000;
     }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // CONNECTION MANAGEMENT
+  // GENERIC CONNECTION MANAGER (for CoinCap + XRPL)
   // ═══════════════════════════════════════════════════════════════════════
 
   _connect(name, url, onMessage, onOpen = null) {
@@ -309,7 +396,14 @@ class RealtimeFeeds {
     }
 
     console.log(`[WS] Connecting to ${name}...`);
-    const ws = new WebSocket(url);
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      console.error(`[WS] ${name} connection failed:`, e.message);
+      this._reconnect(name, url, onMessage, onOpen);
+      return;
+    }
     this.connections[name] = ws;
     this.reconnectAttempts[name] = (this.reconnectAttempts[name] || 0);
 
@@ -325,14 +419,12 @@ class RealtimeFeeds {
     });
 
     ws.on('close', () => {
-      console.log(`[WS] ${name} disconnected`);
       this.emit('disconnected', { source: name });
       this._reconnect(name, url, onMessage, onOpen);
     });
 
     ws.on('error', (err) => {
       console.error(`[WS] ${name} error:`, err.message);
-      // Don't close here - the close event will fire
     });
   }
 
@@ -344,7 +436,10 @@ class RealtimeFeeds {
     }
 
     const delay = Math.min(30000, Math.pow(2, Math.min(this.reconnectAttempts[name], 10)) * 1000);
-    console.log(`[WS] ${name} reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts[name]})`);
+    // Only log every few attempts to reduce noise
+    if (this.reconnectAttempts[name] <= 3 || this.reconnectAttempts[name] % 5 === 0) {
+      console.log(`[WS] ${name} reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempts[name]})`);
+    }
     setTimeout(() => this._connect(name, url, onMessage, onOpen), delay);
   }
 
@@ -355,12 +450,15 @@ class RealtimeFeeds {
   }
 
   stopAll() {
+    this.maxReconnect = 0;
+    this._binanceGaveUp = true;
     for (const [name, ws] of Object.entries(this.connections)) {
-      try {
-        this.maxReconnect = 0; // Prevent reconnect
-        ws.close();
-      } catch (e) { /* ignore */ }
+      try { ws.close(); } catch (e) { /* ignore */ }
     }
+  }
+
+  isBinanceActive() {
+    return this._binanceActive;
   }
 
   getSnapshot() {

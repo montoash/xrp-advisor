@@ -15,6 +15,63 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 
+// ─── Security Middleware ──────────────────────────────────────────────
+app.use((req, res, next) => {
+  // Prevent clickjacking
+  res.setHeader('X-Frame-Options', 'DENY');
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // XSS protection
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  // Don't leak referrer info
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  // Disable dangerous browser features
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  // Content Security Policy - only allow local resources and WebSocket
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+    "connect-src 'self' ws://localhost:* ws://127.0.0.1:*",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'"
+  ].join('; '));
+  // Prevent caching of sensitive data
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+});
+
+// Simple rate limiter (100 requests per minute per IP)
+const rateLimitMap = new Map();
+app.use((req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+  const windowMs = 60000;
+  const maxRequests = 100;
+  if (!rateLimitMap.has(ip)) rateLimitMap.set(ip, []);
+  const timestamps = rateLimitMap.get(ip).filter(t => now - t < windowMs);
+  if (timestamps.length >= maxRequests) {
+    res.status(429).json({ error: 'Too many requests' });
+    return;
+  }
+  timestamps.push(now);
+  rateLimitMap.set(ip, timestamps);
+  next();
+});
+// Clean up rate limit map every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, timestamps] of rateLimitMap.entries()) {
+    const valid = timestamps.filter(t => now - t < 60000);
+    if (valid.length === 0) rateLimitMap.delete(ip);
+    else rateLimitMap.set(ip, valid);
+  }
+}, 300000);
+
 // Core engines
 const aggregator = new DataAggregator();
 const sentimentEngine = new SentimentEngine();
@@ -396,8 +453,8 @@ wss.on('connection', (ws) => {
   ws.on('close', () => console.log('Dashboard client disconnected'));
 });
 
-// ─── Start ────────────────────────────────────────────────────────────
-server.listen(PORT, () => {
+// ─── Start (bound to localhost only for security) ─────────────────────
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`
 ╔══════════════════════════════════════════════════════════╗
 ║              XRP ADVISOR v2.0 - POWERHOUSE              ║
@@ -412,6 +469,11 @@ server.listen(PORT, () => {
 ║  Technicals:  20+ indicators, multi-timeframe            ║
 ║  Influencers: ${String(getInfluencerCount()).padEnd(4)} tracked across all platforms       ║
 ║  Signal:      7-factor model @ 1.68x leverage            ║
+╠══════════════════════════════════════════════════════════╣
+║  SECURITY:                                               ║
+║    Bound to localhost only (not accessible externally)   ║
+║    CSP headers enabled | XSS protection active           ║
+║    Rate limiting: 100 req/min | No data stored to disk   ║
 ╚══════════════════════════════════════════════════════════╝
   `);
 
