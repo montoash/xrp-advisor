@@ -660,7 +660,8 @@ a:hover{text-decoration:underline}
    ============================================================ */
 var S = {
   price:{},ticker:{},market:{},globalMarket:{},
-  sentiment:{},technicals:{},signal:{},
+  sentiment:{score:0,compound:0,label:'No Data',intensity:0,galaxyScore:50,altRank:50,socialVolume:0,socialVelocity:0,sentimentVolatility:0,positive:0,negative:0,neutral:0,strongBull:0,strongBear:0,bullishPercent:0,bearishPercent:0,neutralPercent:100,topKeywords:[]},
+  technicals:{},signal:{},
   fearGreed:[],newsArticles:[],redditPosts:[],
   influencers:[],influencerCount:0,categoryStats:{},
   xrpl:{},whaleAlerts:[],orderFlow:{},
@@ -668,7 +669,8 @@ var S = {
   cryptoCompareSocial:{},coinPaprika:{},
   lastUpdated:null,sparkline7d:[],
   _lastPrice:null,_infTab:'all',_leverage:1.68,
-  _collapsedSections:{},_prevSignal:null
+  _collapsedSections:{},_prevSignal:null,
+  _lastWhaleToast:0
 };
 
 /* ============================================================
@@ -700,9 +702,9 @@ function showToast(type,title,msg,duration){
   setTimeout(function(){
     if(toast.parentElement){toast.classList.add('removing');setTimeout(function(){if(toast.parentElement)toast.remove()},300)}
   },duration);
-  // Limit visible toasts
+  // Limit visible toasts to 3
   var toasts=container.querySelectorAll('.toast');
-  if(toasts.length>5){toasts[0].remove()}
+  while(toasts.length>3){toasts[0].remove();toasts=container.querySelectorAll('.toast')}
 }
 
 /* ============================================================
@@ -786,7 +788,12 @@ function handleMessage(msg){
       S.whaleAlerts.unshift(Object.assign({timestamp:new Date().toISOString()},d));
       if(S.whaleAlerts.length>50)S.whaleAlerts.length=50;
       renderWhales();
-      showToast('whale','Whale Alert',fmtBig(d.amount)+' XRP moved ('+v(d.type,'transfer')+')',8000);
+      // Throttle toasts: max 1 whale toast per 10 seconds
+      var now=Date.now();
+      if(now-S._lastWhaleToast>10000){
+        S._lastWhaleToast=now;
+        showToast('whale','Whale Alert',fmtBig(d.amount)+' XRP moved ('+v(d.type,'transfer')+')',6000);
+      }
       break;
     case'large_trade':
       S.whaleAlerts.unshift({type:'trade',amount:d.value||d.quantity,from:d.side,to:'$'+n(d.price,4),timestamp:new Date().toISOString()});
@@ -891,7 +898,7 @@ function renderSignal(){
   if(sig.indexOf('LONG')>=0)cls='long';
   else if(sig.indexOf('SHORT')>=0)cls='short';
   card.className='card signal-card '+cls;
-  $('signalEmoji').textContent=v(s.emoji,'--');
+  $('signalEmoji').textContent=mapIcon(s.emoji)||v(s.emoji,'--');
   var st=$('signalText');st.textContent=v(sig,'--');st.className='signal-text '+cls;
   $('signalAction').textContent=v(s.action,'Waiting for signal...');
   $('leverageBadge').textContent=n(S._leverage,2)+'x';
@@ -1011,6 +1018,9 @@ function renderMarket(){
 /* ============================================================
    RENDER: SIGNAL FACTORS
    ============================================================ */
+var ICON_MAP={chat:'\u{1F4AC}',chart:'\u{1F4CA}',trending:'\u{1F4C8}',news:'\u{1F4F0}',link:'\u{1F517}',flow:'\u{1F4B1}',globe:'\u{1F30D}',rocket:'\u{1F680}',up:'\u2B06',down:'\u2B07',skull:'\u{1F480}',pause:'\u23F8'};
+function mapIcon(name){return ICON_MAP[name]||'\u2B50'}
+
 function renderFactors(){
   var factors=(S.signal&&S.signal.factors)||[];
   var out='';
@@ -1018,7 +1028,7 @@ function renderFactors(){
     var f=factors[i],score=f.score!=null?Number(f.score):0;
     var absS=Math.abs(score),maxB=50,bw=Math.min(maxB,(absS/100)*maxB);
     var pos=score>=0,left=pos?50:(50-bw),cls=pos?'positive':'negative';
-    out+='<div class="factor-item"><div class="factor-icon">'+esc(v(f.icon,'*'))+'</div>';
+    out+='<div class="factor-item"><div class="factor-icon">'+mapIcon(f.icon)+'</div>';
     out+='<div class="factor-info"><div class="factor-name">'+esc(v(f.name))+'</div>';
     out+='<div class="factor-detail">'+esc(v(f.detail))+'</div></div>';
     out+='<div><div class="factor-bar-wrap"><div class="factor-bar"><div class="factor-bar-center"></div>';
